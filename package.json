@@ -1,0 +1,40 @@
+{
+  "name": "pi-x",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run check:version && npm run typecheck && npm test && npm run build",
+    "test:browser": "node tests/browser.mjs",
+    "format": "prettier --write src tests scripts .github *.json *.ts",
+    "format:check": "prettier --check src tests scripts .github *.json *.ts",
+    "check:version": "node scripts/check-version.mjs",
+    "build:release": "node scripts/build.mjs --release",
+    "package:extension": "npm run check:version && npm run build:release && node scripts/package-extension.mjs",
+    "test:browser:release": "npm run package:extension && node tests/browser.mjs --release"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.18.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/chrome": "^0.1.0",
+    "esbuild": "^0.28.2",
+    "fake-indexeddb": "^6.2.0",
+    "fflate": "^0.8.3",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": "^22.19.0 || ^24.0.0 || >=26.0.0"
+  }
+}

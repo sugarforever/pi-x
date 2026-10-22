@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Quote · pi-x</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="#connection"
+        ><span class="mark" aria-hidden="true">✦</span> pi-x <span class="tag">AI QUOTE</span></a
+      ><span class="local">Your prompts. Your voice.</span>
+    </header>
+    <div class="layout">
+      <aside>
+        <nav aria-label="Settings sections">
+          <a href="#connection">Connection <span>01</span></a
+          ><a href="#prompts">Prompts <span>02</span></a
+          ><a href="#voice">Writing examples <span>03</span></a
+          ><a href="#playground">Playground <span>04</span></a
+          ><a href="#privacy">Your data <span>05</span></a>
+        </nav>
+        <div class="aside-note">
+          Built for the moment<br />you have something to say.
+          <div class="line"></div>
+          Draft with AI.<br />Make it yours. Post yourself.
+        </div>
+      </aside>
+      <main>
+        <div class="intro">
+          <p class="eyebrow">A LITTLE ASSISTANCE. STILL YOUR VOICE.</p>
+          <h1>Good thoughts,<br />in your own words.</h1>
+          <p>
+            Turn a post into a draft worth sharing. Choose your model, shape your prompts, and leave
+            the final word to you.
+          </p>
+        </div>
+        <form id="settings-form">
+          <section id="connection" aria-labelledby="connection-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">01 / THE ENGINE</p>
+                <h2 id="connection-title">Connect your model</h2>
+              </div>
+              <span class="badge">OpenAI compatible</span>
+            </div>
+            <p class="hint">
+              Use a Chat Completions endpoint. Streaming is required; prompts with tools also need
+              tool calling.
+            </p>
+            <label for="base-url">Base URL</label
+            ><input
+              id="base-url"
+              type="url"
+              required
+              placeholder="https://api.openai.com/v1"
+              autocomplete="off"
+            />
+            <div class="columns">
+              <div>
+                <label for="api-key"
+                  >API key <span class="optional">optional for local models</span></label
+                ><input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+              </div>
+              <div>
+                <label for="model">Model ID</label
+                ><input
+                  id="model"
+                  required
+                  placeholder="Your provider’s model ID"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" id="test-connection">Test connection</button
+              ><span id="connection-status" role="status" aria-live="polite"></span>
+            </div>
+            <details>
+              <summary>Research access</summary>
+              <div class="detail-body">
+                <label for="search-key">Brave Search API key</label
+                ><input
+                  id="search-key"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="Required only for web search"
+                />
+                <p class="hint">
+                  Search queries go to Brave. Reading linked articles requires access to public
+                  HTTPS sites. Only prompts with those tools enabled can use them.
+                </p>
+                <label class="check"
+                  ><input id="article-access" type="checkbox" /> Allow article reading on HTTPS
+                  sites</label
+                >
+              </div>
+            </details>
+          </section>
+          <section id="prompts" aria-labelledby="prompts-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">02 / YOUR INTENT</p>
+                <h2 id="prompts-title">A prompt for every thought</h2>
+              </div>
+              <button type="button" id="add-prompt">+ New prompt</button>
+            </div>
+            <p class="hint">
+              AI Quote runs your default immediately. Choose another prompt in the quote dialog to
+              regenerate. Tool access allows the model to gather context when your instructions call
+              for it.
+            </p>
+            <div id="prompt-list"></div>
+          </section>
+          <section id="voice" aria-labelledby="voice-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">03 / THE WAY YOU WRITE</p>
+                <h2 id="voice-title">Give it a feel for your voice</h2>
+              </div>
+              <button type="button" id="add-sample">+ Add example</button>
+            </div>
+            <p class="hint">
+              Paste writing you want it to sound like. Prompts with Writing examples enabled can
+              retrieve relevant samples. Only retrieved samples are sent to your model.
+            </p>
+            <div id="sample-list"></div>
+          </section>
+          <div class="save-bar">
+            <span id="save-status" role="status" aria-live="polite"
+              >Changes stay on this device.</span
+            ><button class="primary" type="submit" id="save">
+              Save settings <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        </form>
+        <section id="playground" aria-labelledby="playground-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">04 / TRY IT ON</p>
+              <h2 id="playground-title">Find the right words</h2>
+            </div>
+            <span class="badge">Preview</span>
+          </div>
+          <p class="hint">
+            Save your settings first, then try a prompt. This uses your configured API and may incur
+            provider charges. Conversation context needs a real X post URL.
+          </p>
+          <label for="preview-post">Example post</label
+          ><textarea
+            id="preview-post"
+            rows="4"
+            placeholder="Paste a post you’d like to translate, rewrite, or respond to…"
+          ></textarea
+          ><label for="preview-url">X post URL <span class="optional">optional</span></label
+          ><input type="url" id="preview-url" placeholder="https://x.com/author/status/123" />
+          <div class="actions">
+            <label class="sr-only" for="preview-prompt">Preview prompt</label
+            ><select id="preview-prompt"></select
+            ><button type="button" id="preview-run" class="primary">Generate preview</button
+            ><button type="button" id="preview-cancel" hidden>Cancel</button>
+          </div>
+          <p id="preview-status" role="status" aria-live="polite"></p>
+          <label for="preview-result">Your draft</label
+          ><textarea
+            id="preview-result"
+            rows="6"
+            readonly
+            placeholder="Your draft will appear here."
+          ></textarea>
+        </section>
+        <section id="privacy" class="privacy">
+          <p class="eyebrow">05 / YOUR DATA</p>
+          <h2>Local by default. Yours to clear.</h2>
+          <p>
+            Keys, prompts, writing samples, and draft sessions are stored in this Chrome profile.
+            Keys are not synced or exposed to X. Your model provider receives the selected post,
+            instructions, and any context gathered by enabled tools. Draft sessions are removed
+            after 24 hours while Chrome is running.
+          </p>
+          <p>
+            Conversation context may open a temporary background X tab. It reads rendered ancestor
+            posts and quoted text; unavailable or unloaded content cannot be read. You always review
+            and post the final draft yourself.
+          </p>
+          <button type="button" class="danger" id="clear-data">Clear all extension data</button
+          ><span id="clear-status" role="status"></span>
+        </section>
+        <footer>pi-x · A considered take, one draft at a time.</footer>
+      </main>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>
