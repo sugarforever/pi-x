@@ -4,15 +4,24 @@
   "description": "Draft quotes on X with your own prompts, writing style, and optional research tools.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "alarms"],
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
   "host_permissions": [
     "https://x.com/*",
     "https://www.x.com/*",
     "https://twitter.com/*",
     "https://www.twitter.com/*"
   ],
-  "optional_host_permissions": ["https://*/*", "http://*/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -21,11 +30,20 @@
         "https://twitter.com/*",
         "https://www.twitter.com/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-  "options_ui": { "page": "options.html", "open_in_tab": true },
-  "action": { "default_title": "AI Quote settings" },
-  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "AI Quote settings"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }
