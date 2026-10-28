@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<title>pi-x panel — new post</title>
+<script src="3001d685-1fe2-4775-a146-92cde2ae3a96"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+
+<style>
+body{margin:0}
+a{color:#0A0A0A}a:hover{color:#5C5C5C}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 400px; height: 860px; box-sizing: border-box; background: #FFFFFF; color: #0A0A0A; font-family: Inter, 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column; border-left: 1px solid #EBEBEB">
+
+  <!-- Header -->
+  <header style="height: 52px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 20px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div aria-hidden="true" style="width: 22px; height: 22px; border-radius: 6px; background: #0A0A0A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; line-height: 1">π</div>
+      <span style="font-weight: 600; letter-spacing: -0.01em">pi-x</span>
+    </div>
+    <div style="display: flex; gap: 2px">
+      <button aria-label="History" style="width: 36px; height: 36px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #5C5C5C">
+        <svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+      </button>
+      <button aria-label="New conversation" style="width: 36px; height: 36px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #5C5C5C">
+        <svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+      </button>
+      <button aria-label="Settings" style="width: 36px; height: 36px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #5C5C5C">
+        <svg aria-hidden="true" width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mode tabs -->
+  <nav aria-label="Mode" style="flex: none; display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid #EBEBEB">
+    <button style="border: 0; background: transparent; padding: 10px 0 12px; color: #737373">Quote</button>
+    <button style="border: 0; background: transparent; padding: 10px 0 12px; color: #737373">Reply</button>
+    <button style="border: 0; background: transparent; padding: 10px 0 12px; color: #0A0A0A; font-weight: 500; border-bottom: 1.5px solid #0A0A0A; margin-bottom: -1px">New post</button>
+  </nav>
+
+  <main style="flex: 1 1 auto; overflow: hidden; padding: 20px; display: flex; flex-direction: column; gap: 20px">
+
+    <!-- User idea -->
+    <div style="align-self: flex-end; max-width: 85%; background: #F5F5F5; border-radius: 14px; padding: 10px 14px; font-size: 14px; line-height: 1.6">想发一条：AI 做设计最大的问题不是不会画，而是太爱“加东西”。写成两条串推，语气克制一点。</div>
+
+    <!-- Agent trace -->
+    <section aria-label="Agent steps" style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #737373">
+      <div style="display: flex; align-items: center; gap: 8px"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg><span>read_my_posts</span><span style="margin-left: auto">20 recent</span></div>
+      <div style="display: flex; align-items: center; gap: 8px"><svg aria-hidden="true" width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg><span>match_voice</span><span style="margin-left: auto">5 samples</span></div>
+    </section>
+
+    <!-- Thread draft -->
+    <article aria-label="Thread draft" style="display: flex; flex-direction: column">
+      <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 12px">
+        <div style="display: flex; flex-direction: column; align-items: center; padding-top: 6px">
+          <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 4px; background: #0A0A0A"></span>
+          <span aria-hidden="true" style="flex: 1; width: 1px; background: #E0E0E0; margin-top: 6px"></span>
+        </div>
+        <div style="padding-bottom: 18px">
+          <div style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #737373; margin-bottom: 6px">1 / 2 · 118</div>
+          <div style="font-size: 14.5px; line-height: 1.75">用 AI 做设计这段时间，我发现它最大的问题不是不会画，而是太爱“加东西”：多一行说明、多一条分割线、多一个图标。每一样单看都合理，放在一起就是噪音。</div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; padding-top: 6px">
+          <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 4px; background: #0A0A0A"></span>
+        </div>
+        <div>
+          <div style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #737373; margin-bottom: 6px">2 / 2 · 96</div>
+          <div style="font-size: 14.5px; line-height: 1.75">所以现在我和它协作时，说得最多的一句是：“这个真的需要吗？”删掉之后，界面往往反而更清楚。</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid #EBEBEB">
+        <div style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #737373">v1 · 2 posts</div>
+        <div style="display: flex; align-items: center; gap: 2px">
+          <button aria-label="Copy" style="width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #5C5C5C">
+            <svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+          </button>
+          <button aria-label="Regenerate" style="width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #5C5C5C">
+            <svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"></path><path d="M20 4v5h-5"></path></svg>
+          </button>
+          <button style="height: 32px; margin-left: 6px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 16px; background: #FFFFFF; color: #0A0A0A; font-size: 13px; display: flex; align-items: center; gap: 6px">
+            <svg aria-hidden="true" width="14" height="14" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg>
+            Inserted
+          </button>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <!-- Composer -->
+  <footer style="flex: none; padding: 12px 16px 16px">
+    <div style="border: 1px solid #E0E0E0; border-radius: 16px; padding: 12px 12px 10px 14px; display: flex; flex-direction: column; gap: 10px">
+      <label for="msg2" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message</label>
+      <textarea id="msg2" rows="1" placeholder="What do you want to say?" style="border: 0; outline: 0; resize: none; font: inherit; font-size: 14px; color: #0A0A0A; background: transparent; padding: 0"></textarea>
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <div style="display: flex; gap: 6px">
+          <button style="height: 28px; padding: 0 10px; border: 1px solid #EBEBEB; border-radius: 14px; background: #FFFFFF; color: #5C5C5C; font-size: 12px">In my voice</button>
+          <button style="height: 28px; padding: 0 10px; border: 1px solid #EBEBEB; border-radius: 14px; background: #FFFFFF; color: #5C5C5C; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace">gpt-6-sol</button>
+        </div>
+        <button aria-label="Send" style="width: 32px; height: 32px; border: 0; border-radius: 16px; background: #0A0A0A; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+          <svg aria-hidden="true" width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:400,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+
+
+</body></html>

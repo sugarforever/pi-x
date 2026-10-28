@@ -13,11 +13,18 @@ export async function packageExtension(root = process.cwd(), tag = process.env.R
   // An allowlist prevents source maps, local paths, dotfiles, or future development artifacts from shipping.
   const files = [
     'manifest.json',
+    'icon16.png',
+    'icon32.png',
+    'icon48.png',
+    'icon128.png',
     'background.js',
     'content.js',
     'options.js',
     'options.html',
     'options.css',
+    'sidepanel.js',
+    'sidepanel.html',
+    'sidepanel.css',
   ];
   const entries = {};
   for (const file of files)

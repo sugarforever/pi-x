@@ -107,3 +107,38 @@ it('serializes a stale progress write against cancellation with cloned storage v
   await run;
   expect(records.get(j.id)?.status).toBe('cancelled');
 });
+it('retains tool calls across job completion', async () => {
+  const records = new Map<string, Job>();
+  const manager = new JobManager(
+    {
+      get: async (id) => records.get(id),
+      put: async (j) => {
+        records.set(j.id, j);
+      },
+    },
+    async (_job, _signal, _progress, record) => {
+      await record({
+        id: 'call1',
+        name: 'web_search',
+        arguments: '{"query":"test"}',
+        status: 'running',
+        startedAt: 1,
+      });
+      await record({
+        id: 'call1',
+        name: 'web_search',
+        arguments: '{"query":"test"}',
+        status: 'done',
+        startedAt: 1,
+        finishedAt: 2,
+        output: 'Evidence',
+      });
+      return 'Draft';
+    },
+  );
+  const j = job();
+  await manager.save(j);
+  await manager.run(j);
+  expect(records.get(j.id)?.toolCalls).toHaveLength(1);
+  expect(records.get(j.id)?.toolCalls?.[0]).toMatchObject({ status: 'done', output: 'Evidence' });
+});

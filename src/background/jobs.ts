@@ -1,4 +1,4 @@
-import type { Job } from '../shared/types';
+import type { Job, ToolTrace } from '../shared/types';
 interface Store {
   get(id: string): Promise<Job | undefined>;
   put(job: Job): Promise<void>;
@@ -7,6 +7,7 @@ type Runner = (
   job: Job,
   signal: AbortSignal,
   progress: (text: string) => Promise<void>,
+  record: (trace: ToolTrace) => Promise<void>,
 ) => Promise<string>;
 export function ownsJob(job: Job, sender: { tab?: { id?: number }; documentId?: string }): boolean {
   return job.tabId === sender.tab?.id && (!job.documentId || job.documentId === sender.documentId);
@@ -47,7 +48,16 @@ export class JobManager {
   async cancel(id: string) {
     this.active.get(id)?.controller.abort();
     await this.mutate(id, (j) =>
-      j.status === 'running' ? { ...j, status: 'cancelled', progress: 'Cancelled' } : undefined,
+      j.status === 'running'
+        ? {
+            ...j,
+            status: 'cancelled',
+            progress: 'Cancelled',
+            toolCalls: j.toolCalls?.map((t) =>
+              t.status === 'running' ? { ...t, status: 'cancelled', finishedAt: Date.now() } : t,
+            ),
+          }
+        : undefined,
     );
   }
   async run(job: Job): Promise<void> {
@@ -58,12 +68,24 @@ export class JobManager {
       try {
         const current = await this.store.get(job.id);
         if (current?.status !== 'running') return;
-        const draft = await this.runner(job, controller.signal, (text) =>
-          this.mutate(job.id, (j) =>
-            j.status === 'running' && !controller.signal.aborted
-              ? { ...j, progress: text }
-              : undefined,
-          ),
+        const draft = await this.runner(
+          job,
+          controller.signal,
+          (text) =>
+            this.mutate(job.id, (j) =>
+              j.status === 'running' && !controller.signal.aborted
+                ? { ...j, progress: text }
+                : undefined,
+            ),
+          (trace) =>
+            this.mutate(job.id, (j) => {
+              if (j.status !== 'running' || controller.signal.aborted) return;
+              const calls = [...(j.toolCalls || [])];
+              const index = calls.findIndex((t) => t.id === trace.id);
+              if (index < 0) calls.push(trace);
+              else calls[index] = trace;
+              return { ...j, toolCalls: calls.slice(-64) };
+            }),
         );
         await this.mutate(job.id, (j) =>
           j.status === 'running' && !controller.signal.aborted

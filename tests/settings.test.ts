@@ -11,7 +11,8 @@ describe('settings', () => {
   it('keeps credentials and writing samples out of page settings', () => {
     const s = defaultSettings();
     s.apiKey = 'secret';
-    s.searchKey = 'search-secret';
+    Object.assign(s, { searchKey: 'retired-secret' });
+    expect(validateSettings(s)).not.toHaveProperty('searchKey');
     s.samples = [{ id: '1', title: 'Voice', text: 'Private writing' }];
     expect(JSON.stringify(publicSettings(s))).not.toMatch(/secret|Private writing/);
     expect(publicSettings(s).prompts[0].name).toBe('Chinese rewrite');
@@ -43,4 +44,18 @@ describe('network URL policy', () => {
     expect(providerUrl('http://localhost:11434/v1/').href).toBe('http://localhost:11434/v1');
     expect(publicWebUrl('https://example.com/article').hostname).toBe('example.com');
   });
+});
+it('adds the reporting option for existing settings without changing custom prompts or defaults', async () => {
+  const { quotePrompts, RETELL_PROMPT } = await import('../src/shared/settings');
+  const settings = defaultSettings();
+  settings.prompts[0].instructions = 'My custom instructions';
+  const saved = structuredClone(settings);
+  const choices = quotePrompts(settings);
+  expect(choices.find((p) => p.id === RETELL_PROMPT.id)?.name).toBe('转述观点');
+  expect(settings).toEqual(saved);
+  expect(choices[0].instructions).toBe('My custom instructions');
+  expect(
+    quotePrompts({ ...settings, prompts: choices }).filter((p) => p.id === RETELL_PROMPT.id),
+  ).toHaveLength(1);
+  expect(publicSettings(settings).prompts.some((p) => p.id === RETELL_PROMPT.id)).toBe(true);
 });

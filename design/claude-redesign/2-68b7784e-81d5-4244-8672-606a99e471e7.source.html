@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>pi-x settings</title>
+<script src="56dc3c96-f805-491f-840d-ee1cc431c224"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+
+<style>
+body{margin:0}
+a{color:#0A0A0A}a:hover{color:#5C5C5C}
+button,input,textarea{font:inherit}
+button{cursor:pointer}
+</style>
+</helmet>
+<div style="box-sizing: border-box; min-height: 1720px; background: #FFFFFF; color: #0A0A0A; font-family: Inter, 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif; font-size: 14px">
+
+  <!-- Top bar -->
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 0 32px; height: 64px; border-bottom: 1px solid #EBEBEB">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div aria-hidden="true" style="width: 22px; height: 22px; border-radius: 6px; background: #0A0A0A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; line-height: 1">π</div>
+      <span style="font-weight: 600">pi-x</span>
+      <span style="color: #737373">/ Settings</span>
+    </div>
+    <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #737373">Saved</span>
+  </header>
+
+  <div style="max-width: 1040px; margin: 0 auto; padding: 56px 32px 96px; display: flex; flex-wrap: wrap; gap: 64px">
+
+    <!-- Side nav -->
+    <nav aria-label="Sections" style="flex: 1 1 160px; max-width: 200px; display: flex; flex-direction: column; gap: 2px; font-size: 14px">
+      <a href="#models" style="text-decoration: none; color: #0A0A0A; font-weight: 500; padding: 8px 0">Models</a>
+      <a href="#intents" style="text-decoration: none; color: #737373; padding: 8px 0">Intents</a>
+      <a href="#voice" style="text-decoration: none; color: #737373; padding: 8px 0">Voice</a>
+      <a href="#behavior" style="text-decoration: none; color: #737373; padding: 8px 0">Behavior</a>
+      <a href="#data" style="text-decoration: none; color: #737373; padding: 8px 0">Data</a>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 64px">
+
+      <!-- Models -->
+      <section id="models" style="display: flex; flex-direction: column; gap: 20px">
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+          <div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Models</h2>
+            <p style="margin: 6px 0 0; color: #5C5C5C; line-height: 1.6">Any OpenAI-compatible endpoint. Streaming and tool calling required.</p>
+          </div>
+          <button style="flex: none; height: 32px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">Add model</button>
+        </div>
+
+        <div style="border-top: 1px solid #EBEBEB">
+          <!-- Row expanded -->
+          <div style="padding: 16px 0 20px; border-bottom: 1px solid #EBEBEB; display: flex; flex-direction: column; gap: 16px">
+            <div style="display: flex; align-items: center; gap: 12px">
+              <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 7px; border: 4px solid #0A0A0A; box-sizing: border-box"></span>
+              <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 500">gpt-6-sol</span>
+              <span style="color: #737373">api.openai.com</span>
+              <span style="margin-left: auto; font-size: 12px; color: #5C5C5C; border: 1px solid #E0E0E0; border-radius: 10px; padding: 1px 8px">Default</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding-left: 26px">
+              <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px">
+                <label for="base" style="font-size: 12px; color: #5C5C5C">Base URL</label>
+                <input id="base" value="https://api.openai.com/v1" style="height: 38px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #0A0A0A">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <label for="key" style="font-size: 12px; color: #5C5C5C">API key <span style="color: #737373">— optional for local</span></label>
+                <input id="key" type="password" value="sk-placeholder-key-000000" style="height: 38px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 13px; color: #0A0A0A">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <label for="mid" style="font-size: 12px; color: #5C5C5C">Model ID</label>
+                <input id="mid" value="gpt-6-sol" style="height: 38px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #0A0A0A">
+              </div>
+              <div style="grid-column: 1 / -1; display: flex; align-items: center; gap: 12px">
+                <button style="height: 32px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">Test connection</button>
+                <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #5C5C5C">● connected · 420 ms</span>
+              </div>
+            </div>
+          </div>
+          <!-- Row collapsed -->
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; gap: 12px">
+            <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 7px; border: 1.5px solid #BDBDBD; box-sizing: border-box"></span>
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 500">[MODEL ID]</span>
+            <span style="color: #737373">localhost:11434</span>
+            <span style="margin-left: auto; color: #737373; font-size: 13px">Edit</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Intents -->
+      <section id="intents" style="display: flex; flex-direction: column; gap: 20px">
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+          <div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Intents</h2>
+            <p style="margin: 6px 0 0; color: #5C5C5C; line-height: 1.6">What you want each draft to do. The default runs as soon as you open a post.</p>
+          </div>
+          <button style="flex: none; height: 32px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">New intent</button>
+        </div>
+
+        <div style="border-top: 1px solid #EBEBEB">
+          <div style="padding: 16px 0 20px; border-bottom: 1px solid #EBEBEB; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; align-items: center; gap: 12px">
+              <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 7px; border: 4px solid #0A0A0A; box-sizing: border-box"></span>
+              <span style="font-weight: 500">Chinese rewrite</span>
+              <span style="margin-left: auto; font-size: 12px; color: #5C5C5C; border: 1px solid #E0E0E0; border-radius: 10px; padding: 1px 8px">Default</span>
+            </div>
+            <div style="padding-left: 26px; display: flex; flex-direction: column; gap: 12px">
+              <label for="ins" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Instructions</label>
+              <textarea id="ins" rows="3" style="box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 14px; line-height: 1.6; color: #0A0A0A; resize: vertical">Translate the selected post into natural Chinese and rewrite it clearly and concisely. Preserve the author's meaning and uncertainty. Do not add opinions or facts. Return only the draft.</textarea>
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px">
+                <span style="font-size: 12px; color: #737373; margin-right: 4px">Tools</span>
+                <button aria-pressed="true" style="height: 26px; padding: 0 10px; border: 1px solid #0A0A0A; border-radius: 13px; background: #0A0A0A; color: #FFFFFF; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace">read_post</button>
+                <button aria-pressed="true" style="height: 26px; padding: 0 10px; border: 1px solid #0A0A0A; border-radius: 13px; background: #0A0A0A; color: #FFFFFF; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace">read_quoted</button>
+                <button aria-pressed="false" style="height: 26px; padding: 0 10px; border: 1px solid #E0E0E0; border-radius: 13px; background: #FFFFFF; color: #5C5C5C; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace">read_thread</button>
+                <button aria-pressed="false" style="height: 26px; padding: 0 10px; border: 1px solid #E0E0E0; border-radius: 13px; background: #FFFFFF; color: #5C5C5C; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace">match_voice</button>
+              </div>
+            </div>
+          </div>
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; gap: 12px">
+            <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 7px; border: 1.5px solid #BDBDBD; box-sizing: border-box"></span>
+            <span style="font-weight: 500; flex: none">In my voice</span>
+            <span style="color: #737373; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">Rewrite the selected post in Chinese using my writing examples…</span>
+          </div>
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; gap: 12px">
+            <span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 7px; border: 1.5px solid #BDBDBD; box-sizing: border-box"></span>
+            <span style="font-weight: 500; flex: none">Read in context</span>
+            <span style="color: #737373; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">[INSTRUCTIONS]</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Voice -->
+      <section id="voice" style="display: flex; flex-direction: column; gap: 20px">
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+          <div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Voice</h2>
+            <p style="margin: 6px 0 0; color: #5C5C5C; line-height: 1.6">Posts you wrote. Used for tone only — never for facts or opinions.</p>
+          </div>
+          <button style="flex: none; height: 32px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">Add sample</button>
+        </div>
+        <div style="border-top: 1px solid #EBEBEB">
+          <div style="padding: 14px 0; border-bottom: 1px solid #EBEBEB; display: flex; gap: 16px; align-items: baseline">
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #737373; flex: none">01</span>
+            <span style="color: #0A0A0A; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">[YOUR SAMPLE POST]</span>
+          </div>
+          <div style="padding: 14px 0; border-bottom: 1px solid #EBEBEB; display: flex; gap: 16px; align-items: baseline">
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #737373; flex: none">02</span>
+            <span style="color: #0A0A0A; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">[YOUR SAMPLE POST]</span>
+          </div>
+          <div style="padding: 14px 0; border-bottom: 1px solid #EBEBEB; display: flex; gap: 16px; align-items: baseline">
+            <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #737373; flex: none">03</span>
+            <span style="color: #0A0A0A; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0">[YOUR SAMPLE POST]</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Behavior -->
+      <section id="behavior" style="display: flex; flex-direction: column; gap: 20px">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Behavior</h2>
+        <div style="border-top: 1px solid #EBEBEB">
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; justify-content: space-between; gap: 24px">
+            <div>
+              <div style="font-weight: 500">Run default intent on open</div>
+              <div style="color: #737373; font-size: 13px; margin-top: 2px">Start drafting as soon as you quote or reply.</div>
+            </div>
+            <button aria-pressed="true" aria-label="Run default intent on open" style="flex: none; width: 40px; height: 24px; border: 0; border-radius: 12px; background: #0A0A0A; padding: 3px; display: flex; justify-content: flex-end"><span aria-hidden="true" style="width: 18px; height: 18px; border-radius: 9px; background: #FFFFFF"></span></button>
+          </div>
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; justify-content: space-between; gap: 24px">
+            <div>
+              <div style="font-weight: 500">Read conversation context</div>
+              <div style="color: #737373; font-size: 13px; margin-top: 2px">Opens a temporary background tab to read parent and quoted posts.</div>
+            </div>
+            <button aria-pressed="true" aria-label="Read conversation context" style="flex: none; width: 40px; height: 24px; border: 0; border-radius: 12px; background: #0A0A0A; padding: 3px; display: flex; justify-content: flex-end"><span aria-hidden="true" style="width: 18px; height: 18px; border-radius: 9px; background: #FFFFFF"></span></button>
+          </div>
+          <div style="padding: 16px 0; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; justify-content: space-between; gap: 24px">
+            <div>
+              <div style="font-weight: 500">Draft language</div>
+              <div style="color: #737373; font-size: 13px; margin-top: 2px">Used when an intent doesn't say.</div>
+            </div>
+            <button style="flex: none; height: 32px; padding: 0 12px; border: 1px solid #E0E0E0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">中文</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Data -->
+      <section id="data" style="display: flex; flex-direction: column; gap: 12px">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Data</h2>
+        <p style="margin: 0; color: #5C5C5C; line-height: 1.7; max-width: 600px">Everything stays in this Chrome profile. Your model provider receives the post, your instructions and any context the tools gather. Drafts are cleared after 24 hours. You always post yourself.</p>
+        <div>
+          <button style="height: 32px; padding: 0; border: 0; background: transparent; color: #B42318; font-size: 13px; text-decoration: underline; text-underline-offset: 3px">Clear all data</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:1720}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+
+
+</body></html>

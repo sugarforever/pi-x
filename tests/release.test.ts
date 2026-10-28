@@ -21,7 +21,20 @@ async function fixture() {
   await json('.release-please-manifest.json', { '.': '1.2.3' });
   await mkdir(join(root, 'dist'));
   await json('dist/manifest.json', { version: '1.2.3' });
-  for (const name of ['background.js', 'content.js', 'options.js', 'options.html', 'options.css'])
+  for (const name of [
+    'icon16.png',
+    'icon32.png',
+    'icon48.png',
+    'icon128.png',
+    'background.js',
+    'content.js',
+    'options.js',
+    'options.html',
+    'options.css',
+    'sidepanel.js',
+    'sidepanel.html',
+    'sidepanel.css',
+  ])
     await writeFile(join(root, 'dist', name), '/* production asset */');
   await writeFile(join(root, 'LICENSE'), 'MIT fixture');
   await writeFile(join(root, 'INSTALL.md'), 'Extract and load unpacked.');
@@ -62,10 +75,17 @@ it('packages only runtime assets with a root manifest, installation guide, and a
     'LICENSE',
     'background.js',
     'content.js',
+    'icon128.png',
+    'icon16.png',
+    'icon32.png',
+    'icon48.png',
     'manifest.json',
     'options.css',
     'options.html',
     'options.js',
+    'sidepanel.css',
+    'sidepanel.html',
+    'sidepanel.js',
   ]);
   expect(JSON.parse(strFromU8(contents['manifest.json'])).version).toBe('1.2.3');
   expect(strFromU8(contents['INSTALL.md'])).toContain('load unpacked');

@@ -2,66 +2,84 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="icon32.png" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>AI Quote · pi-x</title>
+    <title>Writing partner · pi-x</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <header>
       <a class="brand" href="#connection"
-        ><span class="mark" aria-hidden="true">✦</span> pi-x <span class="tag">AI QUOTE</span></a
-      ><span class="local">Your prompts. Your voice.</span>
+        ><img class="mark" src="icon128.png" width="24" height="24" alt="" /> pi-x
+        <span class="settings-title">/ Settings</span></a
+      >
+      <span id="save-status" role="status" aria-live="polite">Changes save automatically.</span>
     </header>
     <div class="layout">
       <aside>
         <nav aria-label="Settings sections">
-          <a href="#connection">Connection <span>01</span></a
-          ><a href="#prompts">Prompts <span>02</span></a
-          ><a href="#voice">Writing examples <span>03</span></a
-          ><a href="#playground">Playground <span>04</span></a
-          ><a href="#privacy">Your data <span>05</span></a>
+          <a href="#connection">Models</a><a href="#prompts">Intents</a><a href="#voice">Voice</a
+          ><a href="#behavior">Behavior</a><a href="#privacy">Data</a
+          ><a href="#playground">Playground</a>
         </nav>
-        <div class="aside-note">
-          Built for the moment<br />you have something to say.
-          <div class="line"></div>
-          Draft with AI.<br />Make it yours. Post yourself.
-        </div>
       </aside>
       <main>
-        <div class="intro">
-          <p class="eyebrow">A LITTLE ASSISTANCE. STILL YOUR VOICE.</p>
-          <h1>Good thoughts,<br />in your own words.</h1>
-          <p>
-            Turn a post into a draft worth sharing. Choose your model, shape your prompts, and leave
-            the final word to you.
-          </p>
-        </div>
         <form id="settings-form">
           <section id="connection" aria-labelledby="connection-title">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">01 / THE ENGINE</p>
-                <h2 id="connection-title">Connect your model</h2>
+                <h2 id="connection-title">Models</h2>
               </div>
-              <span class="badge">OpenAI compatible</span>
+              <button type="button" id="add-model">Add model</button>
             </div>
             <p class="hint">
-              Use a Chat Completions endpoint. Streaming is required; prompts with tools also need
-              tool calling.
+              ChatGPT subscription or an OpenAI-compatible endpoint. Streaming and tool calling
+              required.
             </p>
-            <label for="base-url">Base URL</label
-            ><input
-              id="base-url"
-              type="url"
-              required
-              placeholder="https://api.openai.com/v1"
-              autocomplete="off"
-            />
-            <div class="columns">
-              <div>
-                <label for="api-key"
-                  >API key <span class="optional">optional for local models</span></label
-                ><input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+            <div id="model-list"></div>
+            <div id="model-editor">
+              <label for="provider">Provider</label>
+              <select id="provider">
+                <option value="openai-compatible">OpenAI-compatible API</option>
+                <option value="chatgpt">ChatGPT subscription</option>
+              </select>
+              <div id="chatgpt-account" hidden>
+                <p class="hint">
+                  Sign in with your ChatGPT account using a one-time device code. Your account or
+                  workspace must allow device-code sign-in.
+                </p>
+                <button type="button" id="chatgpt-signin">Sign in with ChatGPT</button>
+                <button type="button" id="chatgpt-cancel" hidden>Cancel sign-in</button>
+                <button type="button" id="chatgpt-signout" hidden>Sign out</button>
+                <p id="chatgpt-status" role="status" aria-live="polite"></p>
+                <p id="chatgpt-device" hidden>
+                  Open
+                  <a
+                    href="https://auth.openai.com/codex/device"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >ChatGPT device sign-in</a
+                  >
+                  and enter <strong id="chatgpt-code"></strong>.
+                </p>
+              </div>
+              <div id="compatible-fields">
+                <label for="base-url">Base URL</label
+                ><input
+                  id="base-url"
+                  type="url"
+                  required
+                  placeholder="https://api.openai.com/v1"
+                  autocomplete="off"
+                />
+                <div>
+                  <div>
+                    <label for="api-key"
+                      >API key <span class="optional">optional for local models</span></label
+                    ><input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+                  </div>
+                </div>
               </div>
               <div>
                 <label for="model">Model ID</label
@@ -72,44 +90,29 @@
                   autocomplete="off"
                 />
               </div>
-            </div>
-            <div class="actions">
-              <button type="button" id="test-connection">Test connection</button
-              ><span id="connection-status" role="status" aria-live="polite"></span>
-            </div>
-            <details>
-              <summary>Research access</summary>
-              <div class="detail-body">
-                <label for="search-key">Brave Search API key</label
-                ><input
-                  id="search-key"
-                  type="password"
-                  autocomplete="off"
-                  placeholder="Required only for web search"
-                />
-                <p class="hint">
-                  Search queries go to Brave. Reading linked articles requires access to public
-                  HTTPS sites. Only prompts with those tools enabled can use them.
-                </p>
-                <label class="check"
-                  ><input id="article-access" type="checkbox" /> Allow article reading on HTTPS
-                  sites</label
-                >
+              <div class="actions">
+                <button type="button" id="test-connection">Test connection</button
+                ><span id="connection-status" role="status" aria-live="polite"></span>
               </div>
+            </div>
+            <details class="research-note">
+              <summary>About browser reading and search</summary>
+              <p class="hint">
+                Browser reading uses temporary tabs and your Chrome login session. Extracted text is
+                sent to your model provider. Exa search needs no key; free usage is rate limited.
+              </p>
             </details>
           </section>
           <section id="prompts" aria-labelledby="prompts-title">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">02 / YOUR INTENT</p>
-                <h2 id="prompts-title">A prompt for every thought</h2>
+                <h2 id="prompts-title">Intents</h2>
               </div>
-              <button type="button" id="add-prompt">+ New prompt</button>
+              <button type="button" id="add-prompt">New intent</button>
             </div>
             <p class="hint">
-              AI Quote runs your default immediately. Choose another prompt in the quote dialog to
-              regenerate. Tool access allows the model to gather context when your instructions call
-              for it.
+              What you want each draft to do. The default runs as soon as you open a quote.
             </p>
             <div id="prompt-list"></div>
           </section>
@@ -117,9 +120,9 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">03 / THE WAY YOU WRITE</p>
-                <h2 id="voice-title">Give it a feel for your voice</h2>
+                <h2 id="voice-title">Voice</h2>
               </div>
-              <button type="button" id="add-sample">+ Add example</button>
+              <button type="button" id="add-sample">Add sample</button>
             </div>
             <p class="hint">
               Paste writing you want it to sound like. Prompts with Writing examples enabled can
@@ -127,14 +130,39 @@
             </p>
             <div id="sample-list"></div>
           </section>
-          <div class="save-bar">
-            <span id="save-status" role="status" aria-live="polite"
-              >Changes stay on this device.</span
-            ><button class="primary" type="submit" id="save">
-              Save settings <span aria-hidden="true">↗</span>
-            </button>
-          </div>
         </form>
+        <section id="behavior" aria-labelledby="behavior-title">
+          <h2 id="behavior-title">Behavior</h2>
+          <label class="behavior-row" for="auto-draft"
+            ><span
+              ><strong>Run default intent on open</strong
+              ><span class="behavior-hint"
+                >Start drafting as soon as you quote or reply.</span
+              ></span
+            ><input id="auto-draft" type="checkbox" role="switch"
+          /></label>
+          <label class="behavior-row" for="read-context"
+            ><span
+              ><strong>Read conversation context</strong
+              ><span class="behavior-hint"
+                >Allow the agent to read parent and quoted posts in a temporary tab.</span
+              ></span
+            ><input id="read-context" type="checkbox" role="switch"
+          /></label>
+          <label class="behavior-row" for="draft-language"
+            ><span
+              ><strong>Draft language</strong
+              ><span class="behavior-hint"
+                >Used when an intent or request doesn’t specify a language.</span
+              ></span
+            ><select id="draft-language">
+              <option value="Chinese">中文</option>
+              <option value="English">English</option>
+              <option value="Japanese">日本語</option>
+              <option value="Same as the user’s request">Auto</option>
+            </select></label
+          >
+        </section>
         <section id="playground" aria-labelledby="playground-title">
           <div class="section-heading">
             <div>
@@ -144,8 +172,8 @@
             <span class="badge">Preview</span>
           </div>
           <p class="hint">
-            Save your settings first, then try a prompt. This uses your configured API and may incur
-            provider charges. Conversation context needs a real X post URL.
+            Settings save automatically. Try a prompt below. This uses your configured API and may
+            incur provider charges. Conversation context needs a real X post URL.
           </p>
           <label for="preview-post">Example post</label
           ><textarea
@@ -172,11 +200,11 @@
         </section>
         <section id="privacy" class="privacy">
           <p class="eyebrow">05 / YOUR DATA</p>
-          <h2>Local by default. Yours to clear.</h2>
+          <h2>Data</h2>
           <p>
             Keys, prompts, writing samples, and draft sessions are stored in this Chrome profile.
             Keys are not synced or exposed to X. Your model provider receives the selected post,
-            instructions, and any context gathered by enabled tools. Draft sessions are removed
+            instructions, and any context gathered by the agent’s tools. Draft sessions are removed
             after 24 hours while Chrome is running.
           </p>
           <p>
@@ -184,7 +212,7 @@
             posts and quoted text; unavailable or unloaded content cannot be read. You always review
             and post the final draft yourself.
           </p>
-          <button type="button" class="danger" id="clear-data">Clear all extension data</button
+          <button type="button" class="danger" id="clear-data">Clear all data</button
           ><span id="clear-status" role="status"></span>
         </section>
         <footer>pi-x · A considered take, one draft at a time.</footer>

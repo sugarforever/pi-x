@@ -28,6 +28,12 @@ const outputs = await Promise.all([
   }),
   build({
     ...shared,
+    entryPoints: ['src/sidepanel/index.ts'],
+    outfile: 'dist/sidepanel.js',
+    format: 'iife',
+  }),
+  build({
+    ...shared,
     entryPoints: ['src/options/index.ts'],
     outfile: 'dist/options.js',
     format: 'iife',
@@ -35,6 +41,9 @@ const outputs = await Promise.all([
 ]);
 await Promise.all([
   copyFile('manifest.json', 'dist/manifest.json'),
+  ...[16, 32, 48, 128].map((size) => copyFile(`assets/icon${size}.png`, `dist/icon${size}.png`)),
+  copyFile('src/sidepanel/sidepanel.html', 'dist/sidepanel.html'),
+  copyFile('src/sidepanel/sidepanel.css', 'dist/sidepanel.css'),
   copyFile('src/options/options.html', 'dist/options.html'),
   copyFile('src/options/options.css', 'dist/options.css'),
 ]);
