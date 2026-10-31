@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run check:version && npm run typecheck && npm test && npm run build",
-    "test:browser": "node tests/browser.mjs",
+    "test:browser": "node tests/inline-drawing-layout.mjs && node tests/browser.mjs",
     "format": "prettier --write src tests scripts .github *.json *.ts",
     "format:check": "prettier --check src tests scripts .github *.json *.ts",
     "check:version": "node scripts/check-version.mjs",

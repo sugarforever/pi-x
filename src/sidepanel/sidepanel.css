@@ -1595,6 +1595,7 @@ select.model-chip {
   display: block;
   width: 100%;
   height: auto;
+  max-height: min(360px, 45vh);
   background: #fbfcfa;
   border-radius: 4px;
   pointer-events: none;
