@@ -11,6 +11,7 @@ export function drawScene(
   scene: Scene,
   view: DiagramView,
   labels: Record<string, [number, number]>,
+  interactive = true,
 ) {
   const node = <K extends keyof SVGElementTagNameMap>(
     tag: K,
@@ -232,9 +233,9 @@ export function drawScene(
         y = q[1] + offset[1];
       const label = node('g', {
         'data-point': id,
-        role: 'button',
-        tabindex: 0,
-        'aria-label': `Move label ${scene.labels[id]}`,
+        ...(interactive
+          ? { role: 'button', tabindex: 0, 'aria-label': `Move label ${scene.labels[id]}` }
+          : {}),
       });
       const hit = node('rect', {
         x: x - 7,
@@ -248,15 +249,16 @@ export function drawScene(
       });
       const caption = text(scene.labels[id], [x, y]);
       caption.setAttribute('pointer-events', 'none');
-      label.append(
-        node(
-          'title',
-          {},
-          `Drag ${scene.labels[id]} to move its label, or focus it and use arrow keys.`,
-        ),
-        hit,
-        caption,
-      );
+      if (interactive)
+        label.append(
+          node(
+            'title',
+            {},
+            `Drag ${scene.labels[id]} to move its label, or focus it and use arrow keys.`,
+          ),
+          hit,
+        );
+      label.append(caption);
       svg.append(label);
     }
   }

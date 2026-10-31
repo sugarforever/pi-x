@@ -1071,18 +1071,36 @@ try {
       .getByText(`Diagram ready: ${title}.`, { exact: true })
       .waitFor();
   };
+  const pagesBeforeDrawing = context.pages().length;
   await messageDrawing(
     'Draw the triangle from the stated conditions without giving a solution',
     'Triangle ABC',
   );
-  assert.equal(await diagram.isVisible(), false, 'Artifact preview is hidden by default');
+  const inline = pagePanel.locator('#conversation .inline-drawing');
+  await inline.locator('svg[aria-label="Triangle ABC"]').waitFor();
+  assert.equal(context.pages().length, pagesBeforeDrawing, 'Drawing does not open a window');
+  assert.equal(
+    await inline.locator('select, [tabindex], [role="button"], [data-label-hit]').count(),
+    0,
+    'Inline drawing has no editing controls',
+  );
+  await pagePanel.setViewportSize({ width: 340, height: 850 });
+  assert(
+    await inline.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    'Drawing fits a narrow panel',
+  );
+  await pagePanel.screenshot({ path: resolve('test-results/inline-drawing-narrow.png') });
+  await pagePanel.setViewportSize({ width: 480, height: 850 });
+  assert.equal(await diagram.isVisible(), false, 'Artifact workspace is hidden by default');
   assert.ok(
     (await pagePanel.locator('#conversation').boundingBox()).height > 450,
     'Chat gets most panel height',
   );
   await pagePanel.screenshot({ path: resolve('test-results/chat-first-panel.png') });
   const previewEvent = context.waitForEvent('page');
-  await pagePanel.locator('#preview-artifact').click();
+  await inline
+    .getByRole('button', { name: 'Open drawing Triangle ABC in preview window', exact: true })
+    .click();
   const previewHost = await previewEvent;
   await previewHost.getByRole('button', { name: 'Keep on top', exact: true }).waitFor();
   await previewHost.waitForURL(/preview=window/);
@@ -1140,6 +1158,12 @@ try {
   await diagram.locator('svg[aria-label="Triangle ABC"]').waitFor();
   await messageDrawing('Add the midpoint M of BC and connect A to M', 'Triangle with median');
   await diagram.locator('[aria-label="Move label M"]').waitFor();
+  await inline.locator('svg[aria-label="Triangle with median"]').waitFor();
+  assert.equal(
+    await inline.locator('svg[aria-label="Triangle ABC"]').count(),
+    1,
+    'Original turn retains its own drawing',
+  );
   await artifactWindow
     .locator('#pinned-artifact-view svg[aria-label="Triangle with median"]')
     .waitFor();
@@ -1172,6 +1196,36 @@ try {
 
   const versionSelect = diagram.getByRole('combobox', { name: 'Diagram version' });
   const medianVersion = await versionSelect.inputValue();
+  const oldPreviewEvent = context.waitForEvent('page');
+  await inline
+    .getByRole('button', { name: 'Open drawing Triangle ABC in preview window', exact: true })
+    .click();
+  const oldPreview = await oldPreviewEvent;
+  await oldPreview.locator('#expanded-diagram-view svg[aria-label="Triangle ABC"]').waitFor();
+  assert.equal(
+    await inline.locator('svg[aria-label="Triangle with median"]').count(),
+    1,
+    'Viewing an older version leaves message snapshots intact',
+  );
+  await oldPreview.close();
+  await versionSelect.selectOption(medianVersion);
+  await diagram.locator('svg[aria-label="Triangle with median"]').waitFor();
+  await pagePanel.reload();
+  await inline.locator('svg[aria-label="Triangle ABC"]').waitFor();
+  await inline.locator('svg[aria-label="Triangle with median"]').waitFor();
+  await pagePanel.locator('#history-toggle').click();
+  await pagePanel.locator('.history-item').first().click();
+  await pagePanel
+    .locator('#history-content .inline-drawing svg[aria-label="Triangle ABC"]')
+    .waitFor();
+  await pagePanel
+    .locator('#history-content .inline-drawing svg[aria-label="Triangle with median"]')
+    .waitFor();
+  await pagePanel.locator('#history-back').click();
+  // Docking is intentionally transient; message snapshots survive a reload.
+  await pagePanel.locator('#dock-artifact').click();
+  await diagram.locator('svg[aria-label="Triangle with median"]').waitFor();
+
   await diagram.getByRole('button', { name: 'Undo diagram', exact: true }).click();
   await diagram.locator('svg[aria-label="Triangle ABC"]').waitFor();
   assert.equal(await diagram.locator('[aria-label="Move label M"]').count(), 0);

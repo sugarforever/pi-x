@@ -41,7 +41,9 @@ The conversation keeps its attached page snapshot when you switch tabs. Use **Ch
 
 Ask “Draw the triangle described on this page”, “Create study notes”, or “Write a Python example”. Then ask for changes in the same chat.
 
-- Click an artifact chip or card to open its **preview window**. Your original browser tab stays in place.
+- Drawings appear directly in assistant messages as static images, without opening a window. Each message shows the version produced in that round; multiple revisions of the same drawing in one round show the final revision, and separate drawings appear individually.
+- Click **Open preview ↗** beneath a drawing to open that version in the **preview window** for a larger view, editing labels, 3D rotation, or SVG/PNG export. Document/code cards and the artifact chip also open the preview window. Your original browser tab stays in place.
+- Message drawings survive reloads and are available in saved chat history. Versions removed by the existing 24-version retention limit show an unavailable notice instead of a newer drawing. While generating, previews remain visible; opening a version is available after the answer finishes.
 - Click **Keep on top** to show a floating preview while chatting. The original preview window minimizes and returns when you close the floating preview. Keep the minimized owner open; closing it also closes the floating preview.
 - Use the version selector or **Undo** to revisit a revision; use **Copy** or **Download** to export it.
 - Use **Dock preview** to view the artifact inside the side panel instead.

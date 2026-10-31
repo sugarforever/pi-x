@@ -412,3 +412,54 @@ it('reuses preview owner tabs across callers and replaces closed or navigated ow
   expect(create).toHaveBeenCalledTimes(3);
   expect((await rpc({ type: 'preview:open', chatId: id, mode: 'tab' }, false)).ok).toBe(false);
 });
+
+it('opens a requested retained drawing version atomically and rejects unavailable versions', async () => {
+  const { rpc, data } = await setup();
+  const id = (await rpc({ type: 'panel:get', windowId: 42 })).value.state.composerId;
+  const { createArtifact, reviseArtifact } = await import('../src/background/artifacts');
+  const { emptyArtifacts } = await import('../src/artifacts/types');
+  const scene = { dimension: 2, points: [{ id: 'A', at: [0, 0] }] };
+  let collection = createArtifact(
+    emptyArtifacts(),
+    { kind: 'diagram', title: 'First', data: scene },
+    'v1',
+    'd',
+    'j1',
+  );
+  collection = reviseArtifact(
+    collection,
+    'd',
+    'v1',
+    { ...scene, title: 'Second' },
+    'v2',
+    'Second',
+    'j2',
+  );
+  data[`artifacts:${id}`] = collection;
+  expect(
+    (await rpc({ type: 'panel:artifact-history', chatId: id })).value.items[0].versions,
+  ).toHaveLength(2);
+  expect((await rpc({ type: 'panel:artifact-history', chatId: 'missing' })).ok).toBe(false);
+  expect((await rpc({ type: 'panel:artifact-history', chatId: id }, false)).ok).toBe(false);
+  const create = vi.fn(async () => ({ id: 100 }));
+  chrome.tabs.create = create as any;
+  expect(
+    (await rpc({ type: 'preview:open', chatId: id, mode: 'tab', artifactId: 'd', versionId: 'v1' }))
+      .ok,
+  ).toBe(true);
+  expect(data[`artifacts:${id}`].items[0].cursor).toBe(0);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(
+    (
+      await rpc({
+        type: 'preview:open',
+        chatId: id,
+        mode: 'tab',
+        artifactId: 'd',
+        versionId: 'missing',
+      })
+    ).ok,
+  ).toBe(false);
+  expect(data[`artifacts:${id}`].items[0].cursor).toBe(0);
+  expect(create).toHaveBeenCalledTimes(1);
+});
