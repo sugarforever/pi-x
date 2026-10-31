@@ -87,4 +87,22 @@ jobs:
           # Require a release created by Release Please; do not invent releases for arbitrary refs.
           gh release view "$RELEASE_TAG" --json tagName --jq .tagName
           gh release upload "$RELEASE_TAG" "release/pi-x-${RELEASE_TAG}.zip" release/SHA256SUMS.txt --clobber
-          gh release edit "$RELEASE_TAG" --draft=false
+          gh release view "$RELEASE_TAG" --json body --jq .body > release-notes.md
+          if ! grep -q '<!-- pi-x-install -->' release-notes.md; then
+            cat >> release-notes.md <<'INSTALL'
+
+          <!-- pi-x-install -->
+          ## Install in Chrome
+
+          1. Download `pi-x-vX.Y.Z.zip` below (not the source code archive).
+          2. Extract it into a permanent folder.
+          3. Open `chrome://extensions` and enable **Developer mode**.
+          4. Click **Load unpacked** and select the folder containing `manifest.json`.
+          5. Open pi-x → **Settings**, connect your model, and click **Test connection**.
+
+          To update, replace the files in the same folder and click **Reload** in Chrome.
+          See the repository README for usage and `INSTALL.md` in the ZIP for details.
+          INSTALL
+          fi
+          gh release edit "$RELEASE_TAG" --notes-file release-notes.md --draft=false
+          echo "Download: https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

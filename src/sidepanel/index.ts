@@ -15,36 +15,33 @@ const request = el<HTMLTextAreaElement>('request'),
   prompt = el<HTMLSelectElement>('prompt');
 let target: { tabId: number; state: PanelState } | null = null;
 const previewFragment = new URLSearchParams(location.hash.slice(1));
-const detachedPreview = previewFragment.get('preview') === 'window';
+const detachedPreview = ['tab', 'window'].includes(previewFragment.get('preview') || '');
 const dockedChats = new Set<string>();
-const previewWindows = new Map<string, number>();
 let previewHostUpdates = Promise.resolve();
 const pinnedPreview = new PinnedArtifactPreview(
   (action) => command(action),
   undefined,
   (visible) => {
-    if (!detachedPreview) return;
-    // Keep the PiP owner alive but out of the way. Serialize updates so a quick
-    // close cannot leave the host minimized after its pinned preview disappears.
+    // Only minimize standalone owners, never the browser containing a preview tab.
+    if (previewFragment.get('preview') !== 'window') return;
+    // Preserve ordering if the floating preview closes before minimization finishes.
     previewHostUpdates = previewHostUpdates
-      .then(async () => {
-        await chrome.windows.update(
-          panelWindowId,
-          visible ? { state: 'minimized' } : { state: 'normal', focused: true },
-        );
-      })
+      .then(() => chrome.windows.update(panelWindowId, { state: visible ? 'minimized' : 'normal' }))
+      .then(() => {})
       .catch(() => {});
   },
 );
-if (detachedPreview) document.body.classList.add('artifact-window');
+if (detachedPreview) {
+  document.body.classList.add('artifact-window');
+  document.title = 'pi-x · Artifact preview';
+}
 async function openArtifactWindow() {
   if (!target || target.state.mode !== 'chat') return;
   const chatId = target.state.composerId;
   if (dockedChats.delete(chatId)) render();
-  const existing = previewWindows.get(chatId);
   try {
-    // Side-panel PiP requests can remain pending in Chrome. Open a normal
-    // extension window directly; pinning is an explicit action in that window.
+    // PiP needs a click in its live owner document. Open a separate window
+    // by default so the original page stays active in the chat browser.
     if (detachedPreview) {
       try {
         if (
@@ -55,37 +52,20 @@ async function openArtifactWindow() {
           )
         )
           return;
-        error('Keep on top is not supported in this browser. The preview remains open.');
+        previewStatus('Keep on top is unavailable. Use this tab or open a separate window.');
       } catch {
         pinnedPreview.close();
-        error('Could not pin the preview. The preview remains open.');
+        previewStatus('Could not pin the preview. Use this tab or open a separate window.');
       }
       return;
     }
-    if (target?.state.composerId !== chatId) return;
-    if (existing !== undefined) {
-      try {
-        await chrome.windows.update(existing, { focused: true });
-        return;
-      } catch {
-        previewWindows.delete(chatId);
-      }
-    }
-    const window = await chrome.windows.create({
-      type: 'popup',
-      width: 900,
-      height: 720,
-      focused: true,
-      url:
-        chrome.runtime.getURL('sidepanel.html') +
-        '#artifact=' +
-        encodeURIComponent(chatId) +
-        '&preview=window',
-    });
-    if (window?.id !== undefined) previewWindows.set(chatId, window.id);
+    await rpc({ type: 'preview:open', chatId, mode: 'window' });
   } catch (e) {
     error(e instanceof Error ? e.message : 'Could not open artifact preview.');
   }
+}
+function previewStatus(message: string) {
+  el('preview-help').textContent = message;
 }
 const pageOptions = el<HTMLDetailsElement>('page-details');
 document.addEventListener('click', (event) => {
@@ -97,6 +77,14 @@ document.addEventListener('keydown', (event) => {
 el('preview-artifact').onclick = () => void openArtifactWindow();
 el('pin-preview').hidden = !detachedPreview;
 el('pin-preview').onclick = () => void openArtifactWindow();
+el('preview-help').hidden = !detachedPreview;
+el('open-preview-window').hidden = !detachedPreview || previewFragment.get('preview') === 'window';
+el('open-preview-window').onclick = () => {
+  if (!target) return;
+  void rpc({ type: 'preview:open', chatId: target.state.composerId, mode: 'window' }).catch((e) =>
+    previewStatus(String(e)),
+  );
+};
 el('dock-artifact').onclick = () => {
   if (!target) return;
   const id = target.state.composerId;
@@ -125,15 +113,9 @@ expandedDiagram.addEventListener('cancel', () => {
 });
 el('open-diagram-tab').onclick = () => {
   if (!target || target.state.mode !== 'chat') return;
-  void chrome.tabs
-    .create({
-      windowId: panelWindowId,
-      url:
-        chrome.runtime.getURL('sidepanel.html') +
-        '#artifact=' +
-        encodeURIComponent(target.state.composerId),
-    })
-    .catch((e) => error(String(e)));
+  void rpc({ type: 'preview:open', chatId: target.state.composerId, mode: 'tab' }).catch((e) =>
+    error(String(e)),
+  );
 };
 
 let signature = '';
@@ -628,8 +610,11 @@ async function refresh() {
     }
     render();
   } catch {
-    target = null;
-    render();
+    if (detachedPreview) previewStatus('Reconnecting to the conversation…');
+    else {
+      target = null;
+      render();
+    }
   } finally {
     polling = false;
   }
@@ -874,7 +859,7 @@ void chrome.windows
     });
     const fragment = previewFragment;
     const diagramChat = fragment.get('artifact') || fragment.get('diagram');
-    if (diagramChat && diagramChat.length <= 100)
+    if (!detachedPreview && diagramChat && diagramChat.length <= 100)
       await rpc({ type: 'panel:chat', windowId: panelWindowId, action: 'resume', id: diagramChat });
     await refresh();
     if (diagramChat && target?.state.mode === 'chat') {

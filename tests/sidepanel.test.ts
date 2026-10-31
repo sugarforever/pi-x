@@ -349,14 +349,15 @@ it('keeps chat first and supports detached and docked artifact previews', async 
   expect(document.getElementById('artifact-chip')!.hidden).toBe(false);
   document.getElementById('preview-artifact')!.click();
   await vi.advanceTimersByTimeAsync(1);
-  expect(messages).toContainEqual(expect.objectContaining({ type: 'window:create' }));
+  expect(messages).toContainEqual(
+    expect.objectContaining({ type: 'preview:open', mode: 'window' }),
+  );
   document.getElementById('dock-artifact')!.click();
   expect(host.hidden).toBe(false);
   expect(host.querySelector('svg')?.getAttribute('aria-label')).toBe('Triangle ABC');
   document.getElementById('preview-artifact')!.click();
   await vi.advanceTimersByTimeAsync(1);
-  expect(messages.filter((m) => m.type === 'window:create')).toHaveLength(1);
-  expect(messages).toContainEqual({ type: 'window:update', id: 99, focused: true });
+  expect(messages.filter((m) => m.type === 'preview:open')).toHaveLength(2);
   expect(host.hidden).toBe(true);
   document.getElementById('dock-artifact')!.click();
   expect(host.hidden).toBe(false);
@@ -384,9 +385,9 @@ it('opens the current diagram in a browser-width tab without attaching a differe
   document.getElementById('open-diagram-tab')!.click();
   await vi.advanceTimersByTimeAsync(1);
   expect(messages).toContainEqual({
-    type: 'tab:create',
-    windowId: 42,
-    url: 'chrome-extension://test/sidepanel.html#artifact=c',
+    type: 'preview:open',
+    chatId: 'c',
+    mode: 'tab',
   });
 });
 it('keeps the latest response in view when a new diagram reduces conversation height', async () => {
@@ -433,8 +434,9 @@ it('opens the final artifact revision produced by a conversation round', async (
   );
   expect(messages).toContainEqual(
     expect.objectContaining({
-      type: 'window:create',
-      url: 'chrome-extension://test/sidepanel.html#artifact=c&preview=window',
+      type: 'preview:open',
+      chatId: 'c',
+      mode: 'window',
     }),
   );
 });
@@ -458,10 +460,10 @@ it('keeps every page-context control inside collapsed details', async () => {
     expect(details.contains(document.getElementById(id))).toBe(true);
 });
 
-it('opens an artifact-only window bound to the requested conversation', async () => {
-  history.replaceState(null, '', '#artifact=c&preview=window');
+it('opens an artifact-only tab without changing the side panel conversation', async () => {
+  history.replaceState(null, '', '#artifact=c&preview=tab');
   const { messages, setTabId } = await setup({ mode: 'chat' });
-  expect(messages).toContainEqual({ type: 'panel:chat', windowId: 42, action: 'resume', id: 'c' });
+  expect(messages.some((m) => m.type === 'panel:chat')).toBe(false);
   expect(document.body.classList.contains('artifact-window')).toBe(true);
   expect((document.getElementById('diagram-expanded') as HTMLDialogElement).open).toBe(true);
   expect(document.getElementById('close-diagram')?.textContent).toBe('Close preview');
@@ -488,3 +490,25 @@ it('renders assistant Markdown but preserves raw user text and copy content', as
   (document.querySelector('.turn.agent .revision-actions button') as HTMLButtonElement).click();
   expect(writeText).toHaveBeenCalledWith(source);
 });
+
+it.each(['window', 'tab'])(
+  'only minimizes a standalone %s preview owner while pinned',
+  async (mode) => {
+    history.replaceState(null, '', `#artifact=c&preview=${mode}`);
+    const doc = document.implementation.createHTMLDocument('');
+    const popup = { document: doc, closed: false, close: vi.fn(), addEventListener: vi.fn() };
+    vi.stubGlobal('documentPictureInPicture', { requestWindow: async () => popup });
+    const { messages } = await setup({ mode: 'chat' });
+    document.getElementById('pin-preview')!.click();
+    await vi.advanceTimersByTimeAsync(1);
+    const updates = () => messages.filter((m) => m.type === 'window:update');
+    if (mode === 'window')
+      expect(updates()).toContainEqual({ type: 'window:update', id: 42, state: 'minimized' });
+    else expect(updates()).toEqual([]);
+    (doc.querySelector('header button') as HTMLButtonElement).click();
+    await vi.advanceTimersByTimeAsync(1);
+    if (mode === 'window')
+      expect(updates().at(-1)).toEqual({ type: 'window:update', id: 42, state: 'normal' });
+    else expect(updates()).toEqual([]);
+  },
+);

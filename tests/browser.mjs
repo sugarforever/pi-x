@@ -1085,8 +1085,14 @@ try {
   await pagePanel.locator('#preview-artifact').click();
   const previewHost = await previewEvent;
   await previewHost.getByRole('button', { name: 'Keep on top', exact: true }).waitFor();
+  await previewHost.waitForURL(/preview=window/);
   const previewHostId = await previewHost.evaluate(
     async () => (await chrome.windows.getCurrent()).id,
+  );
+  assert.notEqual(
+    previewHostId,
+    await pagePanel.evaluate(async () => (await chrome.windows.getCurrent()).id),
+    'Preview opens in a separate window, preserving the original browser tab',
   );
   const pinnedEvent = context.waitForEvent('page');
   await previewHost.getByRole('button', { name: 'Keep on top', exact: true }).click();
@@ -1101,7 +1107,7 @@ try {
     async () => (await chrome.windows.getAll()).find((w) => w.alwaysOnTop)?.id,
   );
   assert.ok(pinnedId, 'Chrome identifies the preview as always-on-top');
-  await pagePanel.waitForFunction(
+  await previewHost.waitForFunction(
     async (id) => (await chrome.windows.get(id)).state === 'minimized',
     previewHostId,
   );
@@ -1153,7 +1159,7 @@ try {
   const previewClosed = artifactWindow.waitForEvent('close');
   await artifactWindow.getByRole('button', { name: 'Close preview', exact: true }).click();
   await previewClosed;
-  await pagePanel.waitForFunction(
+  await previewHost.waitForFunction(
     async (id) => (await chrome.windows.get(id)).state === 'normal',
     previewHostId,
   );

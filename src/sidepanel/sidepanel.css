@@ -1564,3 +1564,13 @@ select.model-chip {
 .markdown-body math {
   font-size: 1.1em;
 }
+
+.artifact-window #open-diagram-tab {
+  display: none;
+}
+#preview-help {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}

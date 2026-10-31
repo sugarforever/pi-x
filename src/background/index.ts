@@ -275,6 +275,58 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
   const panel =
     sender.id === chrome.runtime.id &&
     sender.url?.split('#')[0] === chrome.runtime.getURL('sidepanel.html');
+  // Fragment identity belongs to this extension document, not the active chat
+  // selection for its browser window. A preview must never resume another chat.
+  const fragment = panel ? new URLSearchParams(new URL(sender.url!).hash.slice(1)) : undefined;
+  const preview = ['tab', 'window'].includes(fragment?.get('preview') || '');
+  const previewChatId = preview ? fragment?.get('artifact') : undefined;
+  if (preview && (!previewChatId || previewChatId.length > 100))
+    throw new Error('Invalid preview conversation.');
+  if (panel && message.type === 'preview:open')
+    return serial(async () => {
+      if (typeof message.chatId !== 'string' || !(await pageChats.get(message.chatId)))
+        throw new Error('Conversation is unavailable.');
+      if (message.mode !== 'tab' && message.mode !== 'window')
+        throw new Error('Invalid preview mode.');
+      const url =
+        chrome.runtime.getURL('sidepanel.html') +
+        '#artifact=' +
+        encodeURIComponent(message.chatId) +
+        '&preview=' +
+        message.mode;
+      const key = `preview:${message.mode}:${message.chatId}`;
+      const existing = (await chrome.storage.session.get(key))[key];
+      if (typeof existing === 'number' && Number.isInteger(existing)) {
+        try {
+          const tab = await chrome.tabs.get(existing);
+          if (tab.url === url) {
+            const host = await chrome.windows.get(tab.windowId);
+            await chrome.tabs.update(existing, { active: true });
+            await chrome.windows.update(tab.windowId, {
+              ...(host.state === 'minimized' ? { state: 'normal' as const } : {}),
+              focused: true,
+            });
+            return;
+          }
+        } catch {
+          /* Closed or navigated hosts are replaced below. */
+        }
+      }
+      let tabId: number | undefined;
+      if (message.mode === 'tab') {
+        tabId = (await chrome.tabs.create({ url, active: true })).id;
+      } else {
+        const host = await chrome.windows.create({
+          type: 'popup',
+          url,
+          width: 900,
+          height: 720,
+          focused: true,
+        });
+        tabId = host?.tabs?.[0]?.id;
+      }
+      if (tabId !== undefined) await chrome.storage.session.set({ [key]: tabId });
+    });
   if (panel && message.type === 'panel:history')
     return historySessions(await allJobs(), Date.now(), await pageChats.list());
   if (panel && message.type === 'panel:chat')
@@ -368,10 +420,14 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
     });
   if (panel && message.type === 'panel:get') {
     if (!Number.isInteger(message.windowId)) throw new Error('Invalid assistant window.');
-    const [tab] = await chrome.tabs.query({ active: true, windowId: message.windowId });
-    const selectedId = (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
-      selectedChatKey(message.windowId)
-    ];
+    const [tab] = preview
+      ? []
+      : await chrome.tabs.query({ active: true, windowId: message.windowId });
+    const selectedId =
+      previewChatId ??
+      (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
+        selectedChatKey(message.windowId)
+      ];
     const chat = typeof selectedId === 'string' ? await pageChats.get(selectedId) : undefined;
     if (chat) {
       const state = chatPanelState(chat, await allJobs(), publicSettings(await loadSettings()));
@@ -382,6 +438,7 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
       state.activePageTitle = tab?.title;
       return { tabId: chat.context?.tabId ?? -1, state };
     }
+    if (preview) return null;
     if (tab?.id === undefined) return null;
     const createPageChat = () =>
       serial(async () => {
@@ -437,11 +494,15 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
     }
   }
   if (panel && message.type === 'panel:command') {
-    const selectedId = Number.isInteger(message.windowId)
-      ? (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
-          selectedChatKey(message.windowId)
-        ]
-      : undefined;
+    if (preview && (message.composerId !== previewChatId || message.command?.action !== 'artifact'))
+      throw new Error('Invalid preview command.');
+    const selectedId =
+      previewChatId ??
+      (Number.isInteger(message.windowId)
+        ? (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
+            selectedChatKey(message.windowId)
+          ]
+        : undefined);
     if (typeof selectedId === 'string' && selectedId === message.composerId)
       return serial(async () => {
         const chat = await pageChats.get(selectedId);

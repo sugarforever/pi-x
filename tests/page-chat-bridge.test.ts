@@ -346,3 +346,69 @@ it('persists tool-created documents with correct job receipts and cleans all art
   await rpc({ type: 'panel:chat', windowId: 42, action: 'delete', id });
   expect(data[`artifacts:${id}`]).toBeUndefined();
 });
+
+it('keeps a preview bound to its chat without changing the window selection', async () => {
+  const { rpc } = await setup();
+  const initial = await rpc({ type: 'panel:get', windowId: 42 });
+  const id = initial.value.state.composerId;
+  await rpc({ type: 'panel:chat', windowId: 42, action: 'new' });
+  const other = (await rpc({ type: 'panel:get', windowId: 42 })).value.state.composerId;
+  expect(other).not.toBe(id);
+  const fragment = `#artifact=${id}&preview=tab`;
+  const preview = await rpc({ type: 'panel:get', windowId: 42 }, true, fragment);
+  expect(preview.value.state.composerId).toBe(id);
+  const query = chrome.tabs.query;
+  chrome.tabs.query = (async () => {
+    throw new Error('Original browser window closed');
+  }) as any;
+  expect((await rpc({ type: 'panel:get', windowId: 42 }, true, fragment)).ok).toBe(true);
+  chrome.tabs.query = query;
+  expect((await rpc({ type: 'panel:get', windowId: 42 })).value.state.composerId).toBe(other);
+  const denied = await rpc(
+    {
+      type: 'panel:command',
+      windowId: 42,
+      composerId: other,
+      command: { action: 'artifact', operation: 'select', artifactId: 'missing' },
+    },
+    true,
+    fragment,
+  );
+  expect(denied.ok).toBe(false);
+  await rpc({ type: 'panel:chat', windowId: 42, action: 'resume', id });
+  await rpc({ type: 'panel:chat', windowId: 42, action: 'delete', id });
+  expect((await rpc({ type: 'panel:get', windowId: 42 }, true, fragment)).value).toBeNull();
+});
+
+it('reuses preview owner tabs across callers and replaces closed or navigated owners', async () => {
+  const { rpc } = await setup();
+  const id = (await rpc({ type: 'panel:get', windowId: 42 })).value.state.composerId;
+  const tabs = new Map<number, any>();
+  let nextId = 100;
+  const create = vi.fn(async ({ url }: any) => {
+    const tab = { id: nextId++, windowId: 42, url };
+    tabs.set(tab.id, tab);
+    return tab;
+  });
+  chrome.tabs.create = create as any;
+  chrome.tabs.get = (async (id: number) => {
+    if (!tabs.has(id)) throw new Error('Closed');
+    return tabs.get(id);
+  }) as any;
+  chrome.tabs.update = vi.fn(async (id: number) => tabs.get(id)) as any;
+  (chrome as any).windows = {
+    get: async () => ({ state: 'normal' }),
+    update: vi.fn(async () => ({})),
+  };
+  const open = () => rpc({ type: 'preview:open', chatId: id, mode: 'tab' });
+  expect((await Promise.all([open(), open()])).every((r) => r.ok)).toBe(true);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(tabs.get(100).url).toContain('&preview=tab');
+  tabs.get(100).url = 'https://example.org';
+  expect((await open()).ok).toBe(true);
+  expect(create).toHaveBeenCalledTimes(2);
+  tabs.delete(101);
+  expect((await open()).ok).toBe(true);
+  expect(create).toHaveBeenCalledTimes(3);
+  expect((await rpc({ type: 'preview:open', chatId: id, mode: 'tab' }, false)).ok).toBe(false);
+});
