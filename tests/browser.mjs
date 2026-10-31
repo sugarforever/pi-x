@@ -1103,17 +1103,20 @@ try {
     false,
     'Detached preview contains no chat UI',
   );
-  const pinnedId = await worker.evaluate(
-    async () => (await chrome.windows.getAll()).find((w) => w.alwaysOnTop)?.id,
+  // Headless Linux does not reliably expose PiP through chrome.windows.
+  // Assert the actual Document PiP display mode instead of OS window metadata.
+  assert.equal(
+    await artifactWindow.evaluate(() => matchMedia('(display-mode: picture-in-picture)').matches),
+    true,
+    'Preview is a real Document Picture-in-Picture window',
   );
-  assert.ok(pinnedId, 'Chrome identifies the preview as always-on-top');
   await previewHost.waitForFunction(
     async (id) => (await chrome.windows.get(id)).state === 'minimized',
     previewHostId,
   );
   await pagePanel.bringToFront();
   assert.equal(
-    await worker.evaluate(async (id) => (await chrome.windows.get(id)).alwaysOnTop, pinnedId),
+    await artifactWindow.evaluate(() => matchMedia('(display-mode: picture-in-picture)').matches),
     true,
     'Preview remains pinned when chat is focused',
   );
@@ -1316,7 +1319,7 @@ try {
     .getByRole('heading', { name: 'Study notes', exact: true })
     .waitFor();
   assert(
-    await worker.evaluate(async () => (await chrome.windows.getAll()).some((w) => w.alwaysOnTop)),
+    await repinned.evaluate(() => matchMedia('(display-mode: picture-in-picture)').matches),
     'Fallback preview can be pinned from its own window',
   );
   const repinnedClosed = repinned.waitForEvent('close');

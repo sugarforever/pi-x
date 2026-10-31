@@ -57,13 +57,12 @@ it('rejects versions Chrome cannot install', async () => {
     await expect(checkVersions(root)).rejects.toThrow(/version/i);
   }
 });
-it('fails when the lockfile or release metadata drifts', async () => {
+it('fails when the lockfile drifts', async () => {
   const { root, json } = await fixture();
   await json('package-lock.json', { version: '1.2.3', packages: { '': { version: '1.1.0' } } });
   await expect(checkVersions(root)).rejects.toThrow(/lock/i);
   await json('package-lock.json', { version: '1.2.3', packages: { '': { version: '1.2.3' } } });
-  await json('.release-please-manifest.json', { '.': '1.0.0' });
-  await expect(checkVersions(root)).rejects.toThrow(/release/i);
+  expect(await checkVersions(root)).toBe('1.2.3');
 });
 it('packages only runtime assets with a root manifest, installation guide, and a valid checksum', async () => {
   const { root } = await fixture();
@@ -116,4 +115,10 @@ it('produces the same archive in a different timezone', async () => {
     { cwd: root, env: { ...process.env, TZ: 'America/Los_Angeles', RELEASE_TAG: '' } },
   );
   expect(await readFile(archive)).toEqual(original);
+});
+
+it('validates tag-managed releases without Release Please metadata', async () => {
+  const { root } = await fixture();
+  await rm(join(root, '.release-please-manifest.json'));
+  expect(await checkVersions(root, 'v1.2.3')).toBe('1.2.3');
 });

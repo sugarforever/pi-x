@@ -18,7 +18,6 @@ export async function checkVersions(root = process.cwd(), tag = process.env.RELE
   }
   const manifest = await read('manifest.json');
   const lock = await read('package-lock.json');
-  const release = await read('.release-please-manifest.json');
   for (const [name, value] of [
     ['manifest.json', manifest.version],
     ['package-lock.json', lock.version],
@@ -27,9 +26,6 @@ export async function checkVersions(root = process.cwd(), tag = process.env.RELE
     if (value !== version)
       throw new Error(`${name} version ${value} does not match package.json ${version}.`);
   }
-  // Empty metadata is Release Please's documented bootstrap for an unreleased package.
-  if (release['.'] !== undefined && release['.'] !== version)
-    throw new Error('Release Please metadata does not match package.json.');
   if (tag !== undefined && tag !== '' && tag !== `v${version}`)
     throw new Error(`Release tag must be v${version}; received ${tag}.`);
   return version;

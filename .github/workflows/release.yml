@@ -2,61 +2,64 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vX.Y.Z release tag to repair/publish; leave empty to update the release PR
-        required: false
+        description: Existing vX.Y.Z tag to publish or retry
+        required: true
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  verify:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ inputs.tag || github.sha }}
-
-  release-please:
-    needs: verify
-    if: github.event_name == 'push' || inputs.tag == ''
+  resolve:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
-        id: release
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-          target-branch: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag and release source
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected an existing stable vMAJOR.MINOR.PATCH tag.' >&2
+            exit 1
+          fi
+          sha=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$sha" origin/main
+          git checkout --detach "$sha"
+          node scripts/check-version.mjs "$RELEASE_TAG"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: resolve
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
 
   publish:
-    needs: [verify, release-please]
-    if: >-
-      always() && needs.verify.result == 'success' &&
-      (needs.release-please.outputs.release_created == 'true' ||
-       (github.event_name == 'workflow_dispatch' && inputs.tag != ''))
+    needs: [resolve, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     steps:
       - name: Validate tag syntax
         shell: bash
@@ -67,7 +70,7 @@ jobs:
           fi
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -84,8 +87,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          # Require a release created by Release Please; do not invent releases for arbitrary refs.
-          gh release view "$RELEASE_TAG" --json tagName --jq .tagName
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "pi-x $RELEASE_TAG"
+          fi
           gh release upload "$RELEASE_TAG" "release/pi-x-${RELEASE_TAG}.zip" release/SHA256SUMS.txt --clobber
           gh release view "$RELEASE_TAG" --json body --jq .body > release-notes.md
           if ! grep -q '<!-- pi-x-install -->' release-notes.md; then

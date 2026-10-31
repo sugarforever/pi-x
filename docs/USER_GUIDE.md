@@ -208,7 +208,7 @@ Browser tests use a disposable profile, controlled network fixtures, and a local
 
 ## Releases and contributions
 
-Use **Conventional Commits**: `fix:` for patches, `feat:` for features, and `!` or a `BREAKING CHANGE:` footer for breaking changes. Release Please proposes **Semantic Versioning** updates and a changelog in a release PR. Merging that PR triggers verification and publishes a GitHub Release with the extension ZIP and checksum.
+Releases are controlled by Git tags. Keep the version in `package.json`, `package-lock.json`, and `manifest.json` aligned, commit it to `main`, then push a matching tag such as `v0.1.0`. GitHub Actions tests the tagged source and publishes the extension ZIP and checksum. No release PR is needed.
 
 See [docs/RELEASING.md](RELEASING.md) for one-time GitHub setup, version rules, and release recovery.
 

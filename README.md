@@ -87,7 +87,7 @@ npm run test:browser          # Isolated browser fixtures; no personal Chrome se
 npm run test:browser:release  # Build and test the downloadable ZIP
 ```
 
-Push Conventional Commits (`fix:`, `feat:`) to `main`. After checks pass, **Release Please** opens or updates a release PR with the version and changelog. Merge that PR when ready; GitHub Actions verifies the release and publishes **`pi-x-vX.Y.Z.zip`** and **`SHA256SUMS.txt`**. Users install the ZIP manually with the steps above.
+Releases are controlled by Git tags. Keep the version in `package.json`, `package-lock.json`, and `manifest.json` aligned, commit it to `main`, then push a matching tag such as `v0.1.0`. GitHub Actions tests the tagged source and publishes the extension ZIP and checksum. No release PR is needed.
 
 See [Release management](docs/RELEASING.md) for setup and retry instructions. No Chrome Web Store publishing is configured.
 
