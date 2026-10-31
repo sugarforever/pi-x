@@ -1,3 +1,4 @@
+import { xPostUrl } from '../shared/urls';
 import type { Post } from '../shared/types';
 export function extractPost(article: Element): Post | undefined {
   const texts = Array.from(article.querySelectorAll<HTMLElement>('[data-testid="tweetText"]'));
@@ -52,6 +53,14 @@ export function extractPost(article: Element): Post | undefined {
     return [];
   });
   const quotedLink = quotedRoot?.querySelector('a[href*="/status/"]')?.getAttribute('href');
+  let quotedUrl: string | undefined;
+  if (quotedLink) {
+    try {
+      quotedUrl = xPostUrl(new URL(quotedLink, 'https://x.com').href);
+    } catch {
+      // Preserve quoted text even when X's card has no usable post permalink.
+    }
+  }
   return {
     ...(sourceExpandButton(article) || (articleTitle && !articleText) ? { truncated: true } : {}),
     ...(articleTitle ? { articleTitle } : {}),
@@ -64,7 +73,7 @@ export function extractPost(article: Element): Post | undefined {
       ? {
           quoted: {
             text: quoted.textContent?.trim() || '',
-            ...(quotedLink ? { url: new URL(quotedLink, 'https://x.com').href } : {}),
+            ...(quotedUrl ? { url: quotedUrl } : {}),
           },
         }
       : {}),

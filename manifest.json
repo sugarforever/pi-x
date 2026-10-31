@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "pi-x",
-  "description": "Compose drafts through conversation. Turn ideas, links, and posts into your own words with automatic research and refinement.",
+  "description": "Chat with any readable web page. Discuss content, understand problems, research ideas, and write on X.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "alarms", "sidePanel", "scripting"],
@@ -27,7 +27,7 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "Open pi-x writing partner",
+    "default_title": "Open pi-x page companion",
     "default_icon": {
       "16": "icon16.png",
       "32": "icon32.png",

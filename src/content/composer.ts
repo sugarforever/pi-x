@@ -104,13 +104,17 @@ export class Composer {
       text,
       ...(this.jobId ? { jobId: this.jobId } : {}),
       ...(status ? { status } : {}),
+      ...(role === 'agent'
+        ? {
+            promptId: this.state.promptId,
+            promptName: this.state.prompts.find((p) => p.id === this.state.promptId)?.name,
+          }
+        : {}),
     };
     this.state.turns.push(t);
     return t;
   }
   private propose(draft: string, baseline: string) {
-    for (const t of this.state.turns) if (t.status === 'proposal') t.status = 'dismissed';
-    this.proposals.clear();
     const turn = this.turn('agent', draft, 'proposal');
     this.proposals.set(turn.id, { draft, baseline });
   }
@@ -172,19 +176,22 @@ export class Composer {
       )
         throw new Error('Enter a request up to 4,000 characters.');
       const instruction = command.instruction.trim();
-      if (!this.completedJobId) {
-        // Manual drafting starts with the selected source when auto-draft is off.
-        if (command.promptId) {
-          if (!this.state.prompts.some((p) => p.id === command.promptId))
-            throw new Error('Choose an available writing prompt.');
-          this.state.promptId = command.promptId;
-        }
+      const changedIntent = !!command.promptId && command.promptId !== this.state.promptId;
+      if (command.promptId) {
+        if (!this.state.prompts.some((p) => p.id === command.promptId))
+          throw new Error('Choose an available writing prompt.');
+        this.state.promptId = command.promptId;
+      }
+      if (!this.completedJobId || changedIntent) {
         this.initialBrief = instruction;
         void this.generate(undefined, instruction);
         return {};
       }
       const current = editorText(this.editor);
-      const latest = [...this.proposals.values()].at(-1);
+      const latestTurn = this.state.turns.findLast(
+        (t) => t.role === 'agent' && t.status !== 'error',
+      );
+      const latest = latestTurn ? this.proposals.get(latestTurn.id) : undefined;
       // Until applied, continue refining the proposal if the X editor hasn't changed.
       const workingDraft = latest && current === latest.baseline ? latest.draft : current;
       this.turn('user', instruction);
@@ -273,12 +280,7 @@ export class Composer {
     const generation = ++this.generation;
     if (!refinement) {
       this.completedJobId = undefined;
-      this.state.ready = !this.post;
-      this.state.turns = [];
-      this.state.jobIds = [];
       if (brief) this.turn('user', brief);
-      this.proposals.clear();
-      this.undoState = undefined;
     }
     const baseline = editorText(this.editor);
     this.message('Writing a revision…');

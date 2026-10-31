@@ -1,3 +1,8 @@
+import { ArtifactStore } from './artifacts';
+import { diagramArtifact, toDiagram } from '../artifacts/diagram-adapter';
+import { DiagramStore } from './diagrams';
+import { currentDiagram } from '../geometry/document';
+import { CHAT_PROMPT, PageChats, captureCurrentPage, chatPanelState } from './page-chat';
 import { chatGPTAuth } from './chatgpt-auth';
 import { historySessions } from './history';
 import {
@@ -21,6 +26,10 @@ import { readConversation, resolveSourcePost } from './context';
 import { originalInput } from './original';
 import { refinementJob } from './refinement';
 import { sessionTools } from './research-access';
+const pageChats = new PageChats();
+const artifacts = new ArtifactStore();
+const diagrams = new DiagramStore(artifacts);
+const selectedChatKey = (windowId: number) => `page-chat:${windowId}`;
 const sessionId = (job: Job) => job.sessionId || job.id;
 
 // Content scripts never receive raw local storage access, API keys, or transcripts.
@@ -52,8 +61,16 @@ const manager = new JobManager(store, async (job, signal, progress, record) => {
   const behavior = behaviorSettings(settings);
   const prompt = {
     ...job.prompt,
-    tools: sessionTools(job.prompt.enabledTools, behavior.readContext),
+    tools:
+      job.mode === 'chat'
+        ? job.prompt.tools
+        : sessionTools(job.prompt.enabledTools, behavior.readContext),
   };
+  if (
+    job.mode === 'chat' &&
+    !(await chrome.permissions.contains({ origins: ['https://mcp.exa.ai/*'] }))
+  )
+    prompt.tools = prompt.tools.filter((tool) => tool !== 'search');
   if (prompt.tools.includes('search')) await hasOrigin('https://mcp.exa.ai');
   const combined = AbortSignal.any([
     signal,
@@ -64,13 +81,77 @@ const manager = new JobManager(store, async (job, signal, progress, record) => {
       combined.throwIfAborted();
       if (job.post?.truncated || /(?:…|\.\.\.)\s*$/.test(job.post?.text || ''))
         await progress('Reading full source post…');
-      const sourcePost = await resolveSourcePost(job, combined);
+      const sourcePost = job.mode === 'chat' ? undefined : await resolveSourcePost(job, combined);
+      let observedDiagram: { id?: string; base: string | null } = { base: null };
+      const readDiagram = async () => {
+        const collection = await artifacts.get(sessionId(job));
+        const artifact = diagramArtifact(collection);
+        const doc = toDiagram(collection);
+        observedDiagram = { id: artifact?.id, base: currentDiagram(doc)?.id ?? null };
+        return doc;
+      };
       const session = await openDraft(
         await IndexedDbStorage.open(database(sessionId(job))),
         settings,
         {
           prompt,
           mode: job.mode,
+          diagram:
+            job.mode === 'chat'
+              ? {
+                  get: readDiagram,
+                  draw: async (spec, operationId) => {
+                    const observed = observedDiagram;
+                    combined.throwIfAborted();
+                    if (!(await pageChats.get(sessionId(job))))
+                      throw new Error('Conversation was deleted.');
+                    combined.throwIfAborted();
+                    const result = await diagrams.draw(
+                      sessionId(job),
+                      spec,
+                      `${job.id}:${operationId}`,
+                      observed.id,
+                      observed.base,
+                      job.id,
+                    );
+                    observedDiagram = {
+                      id: observed.id || 'diagram',
+                      base: currentDiagram(result)?.id ?? null,
+                    };
+                    return result;
+                  },
+                }
+              : undefined,
+          artifacts:
+            job.mode === 'chat'
+              ? {
+                  operationId: (taskId) => `${job.id}:${taskId}`,
+                  list: () => artifacts.get(sessionId(job)),
+                  create: async (input, operation) => {
+                    combined.throwIfAborted();
+                    if (!(await pageChats.get(sessionId(job))))
+                      throw new Error('Conversation was deleted.');
+                    combined.throwIfAborted();
+                    return artifacts.create(sessionId(job), input, operation, undefined, job.id);
+                  },
+                  update: async (id, base, data, operation, title) => {
+                    combined.throwIfAborted();
+                    if (!(await pageChats.get(sessionId(job))))
+                      throw new Error('Conversation was deleted.');
+                    combined.throwIfAborted();
+                    return artifacts.revise(
+                      sessionId(job),
+                      id,
+                      base,
+                      data,
+                      operation,
+                      title,
+                      job.id,
+                    );
+                  },
+                }
+              : undefined,
+          pageContext: job.pageContext,
           onTool: (trace) =>
             record({
               ...trace,
@@ -88,10 +169,27 @@ const manager = new JobManager(store, async (job, signal, progress, record) => {
           signal: combined,
           context: (url) => readConversation(job, url, combined),
           article: (url) => readBrowserPage(url, combined),
-          screenshot: async (request) =>
-            navigator.locks.request('pi-x-screenshot', () =>
-              captureScreenshot(request, job.tabId, combined),
-            ),
+          screenshot:
+            job.mode === 'chat' && !job.allowScreenshot
+              ? undefined
+              : async (request) => {
+                  if (job.mode === 'chat') {
+                    if (
+                      !job.pageContext ||
+                      request.url ||
+                      (request.tabId !== undefined && request.tabId !== job.tabId)
+                    )
+                      throw new Error('Screenshot access is limited to the attached page.');
+                    const current = await chrome.tabs.get(job.tabId);
+                    if (current.url !== job.pageContext.url)
+                      throw new Error(
+                        'The attached page has changed. Refresh its context before capturing a screenshot.',
+                      );
+                  }
+                  return navigator.locks.request('pi-x-screenshot', () =>
+                    captureScreenshot(request, job.tabId, combined),
+                  );
+                },
           progress: (text) => {
             void progress(text).catch(() => {});
           },
@@ -175,59 +273,136 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
   await ready;
   if (!message || typeof message.type !== 'string') throw new Error('Invalid request.');
   const panel =
-    sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL('sidepanel.html');
-  if (panel && message.type === 'panel:history') return historySessions(await allJobs());
-  if (panel && message.type === 'panel:mode') {
-    if (!Number.isInteger(message.windowId) || !['quote', 'reply'].includes(message.mode))
-      throw new Error('Invalid writing mode.');
-    const url = xPostUrl(message.url);
-    const tab = await chrome.tabs.create({
-      windowId: message.windowId,
-      url: 'about:blank',
-      active: false,
+    sender.id === chrome.runtime.id &&
+    sender.url?.split('#')[0] === chrome.runtime.getURL('sidepanel.html');
+  if (panel && message.type === 'panel:history')
+    return historySessions(await allJobs(), Date.now(), await pageChats.list());
+  if (panel && message.type === 'panel:chat')
+    return serial(async () => {
+      if (!Number.isInteger(message.windowId)) throw new Error('Invalid assistant window.');
+      const selectionKey = selectedChatKey(message.windowId);
+      if (message.action === 'new') {
+        const [tab] = await chrome.tabs.query({ active: true, windowId: message.windowId });
+        if (!tab) throw new Error('No active page.');
+        const chat = await pageChats.create(await captureCurrentPage(tab));
+        await chrome.storage.session.set({ [selectionKey]: chat.id });
+        return null;
+      }
+      if (typeof message.id !== 'string') throw new Error('Invalid conversation.');
+      const chat = await pageChats.get(message.id);
+      if (!chat) throw new Error('Conversation is unavailable.');
+      if (message.action === 'resume') {
+        await chrome.storage.session.set({ [selectionKey]: chat.id });
+        return null;
+      }
+      const selected = (await chrome.storage.session.get(selectionKey))[selectionKey];
+      if (selected !== chat.id) throw new Error('Select this conversation first.');
+      if (message.action === 'refresh') {
+        const [tab] = await chrome.tabs.query({ active: true, windowId: message.windowId });
+        if (!tab) throw new Error('No active page.');
+        await pageChats.attach(chat.id, await captureCurrentPage(tab));
+      } else if (message.action === 'remove') await pageChats.attach(chat.id, undefined);
+      else if (message.action === 'delete') {
+        const jobs = (await allJobs()).filter((j) => j.mode === 'chat' && j.sessionId === chat.id);
+        for (const job of jobs) await manager.cancel(job.id);
+        await navigator.locks.request(database(chat.id), () =>
+          IndexedDbStorage.delete(database(chat.id)),
+        );
+        for (const job of jobs) await chrome.storage.local.remove(key(job.id));
+        await pageChats.delete(chat.id);
+        await diagrams.delete(chat.id);
+        await chrome.storage.session.remove(selectionKey);
+      } else throw new Error('Unknown conversation action.');
+      return null;
     });
-    if (tab.id === undefined) throw new Error('Could not open the source post.');
-    try {
-      await chrome.storage.session.set({ [`compose:${tab.id}`]: { mode: message.mode, url } });
-      await chrome.tabs.update(tab.id, { url, active: true });
-      return { tabId: tab.id };
-    } catch (e) {
-      await chrome.storage.session.remove(`compose:${tab.id}`);
-      await chrome.tabs.remove(tab.id).catch(() => {});
-      throw e;
-    }
-  }
-  if (panel && message.type === 'panel:new') {
-    if (!Number.isInteger(message.windowId)) throw new Error('Invalid writing window.');
-    // Register intent before navigation so a fast content script cannot miss the handoff.
-    const tab = await chrome.tabs.create({
-      windowId: message.windowId,
-      url: 'about:blank',
-      active: false,
-    });
-    if (tab.id === undefined) throw new Error('Could not open a new X composer.');
-    try {
-      const restore =
-        typeof message.restoreJobId === 'string'
-          ? await store.get(message.restoreJobId)
-          : undefined;
-      if (message.restoreJobId && !restore?.draft)
-        throw new Error('This historical draft is unavailable.');
-      await chrome.storage.session.set({
-        [`compose:${tab.id}`]: restore?.draft ? { mode: 'compose', draft: restore.draft } : true,
+  if (panel && message.type === 'panel:mode')
+    return serial(async () => {
+      if (!Number.isInteger(message.windowId) || !['quote', 'reply'].includes(message.mode))
+        throw new Error('Invalid writing mode.');
+      const url = xPostUrl(message.url);
+      await chrome.storage.session.remove(selectedChatKey(message.windowId));
+      const tab = await chrome.tabs.create({
+        windowId: message.windowId,
+        url: 'about:blank',
+        active: false,
       });
-      await chrome.tabs.update(tab.id, { url: 'https://x.com/compose/post', active: true });
-      return { tabId: tab.id };
-    } catch (e) {
-      await chrome.storage.session.remove(`compose:${tab.id}`);
-      await chrome.tabs.remove(tab.id).catch(() => {});
-      throw e;
-    }
-  }
+      if (tab.id === undefined) throw new Error('Could not open the source post.');
+      try {
+        await chrome.storage.session.set({ [`compose:${tab.id}`]: { mode: message.mode, url } });
+        await chrome.tabs.update(tab.id, { url, active: true });
+        return { tabId: tab.id };
+      } catch (e) {
+        await chrome.storage.session.remove(`compose:${tab.id}`);
+        await chrome.tabs.remove(tab.id).catch(() => {});
+        throw e;
+      }
+    });
+  if (panel && message.type === 'panel:new')
+    return serial(async () => {
+      if (!Number.isInteger(message.windowId)) throw new Error('Invalid writing window.');
+      await chrome.storage.session.remove(selectedChatKey(message.windowId));
+      // Register intent before navigation so a fast content script cannot miss the handoff.
+      const tab = await chrome.tabs.create({
+        windowId: message.windowId,
+        url: 'about:blank',
+        active: false,
+      });
+      if (tab.id === undefined) throw new Error('Could not open a new X composer.');
+      try {
+        const restore =
+          typeof message.restoreJobId === 'string'
+            ? await store.get(message.restoreJobId)
+            : undefined;
+        if (message.restoreJobId && !restore?.draft)
+          throw new Error('This historical draft is unavailable.');
+        await chrome.storage.session.set({
+          [`compose:${tab.id}`]: restore?.draft ? { mode: 'compose', draft: restore.draft } : true,
+        });
+        await chrome.tabs.update(tab.id, { url: 'https://x.com/compose/post', active: true });
+        return { tabId: tab.id };
+      } catch (e) {
+        await chrome.storage.session.remove(`compose:${tab.id}`);
+        await chrome.tabs.remove(tab.id).catch(() => {});
+        throw e;
+      }
+    });
   if (panel && message.type === 'panel:get') {
     if (!Number.isInteger(message.windowId)) throw new Error('Invalid assistant window.');
     const [tab] = await chrome.tabs.query({ active: true, windowId: message.windowId });
+    const selectedId = (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
+      selectedChatKey(message.windowId)
+    ];
+    const chat = typeof selectedId === 'string' ? await pageChats.get(selectedId) : undefined;
+    if (chat) {
+      const state = chatPanelState(chat, await allJobs(), publicSettings(await loadSettings()));
+      state.artifacts = await artifacts.get(chat.id);
+      state.diagram = toDiagram(state.artifacts);
+      state.pageChanged =
+        !!chat.context && (tab?.id !== chat.context.tabId || tab?.url !== chat.context.url);
+      state.activePageTitle = tab?.title;
+      return { tabId: chat.context?.tabId ?? -1, state };
+    }
     if (tab?.id === undefined) return null;
+    const createPageChat = () =>
+      serial(async () => {
+        const [active] = await chrome.tabs.query({ active: true, windowId: message.windowId });
+        if (active?.id !== tab.id || active?.url !== tab.url) return null;
+        // Recheck selection after queued admissions to avoid duplicate captures from polling panels.
+        const currentId = (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
+          selectedChatKey(message.windowId)
+        ];
+        const current = typeof currentId === 'string' ? await pageChats.get(currentId) : undefined;
+        const created = current || (await pageChats.create(await captureCurrentPage(tab)));
+        await chrome.storage.session.set({ [selectedChatKey(message.windowId)]: created.id });
+        return {
+          tabId: created.context?.tabId ?? -1,
+          state: chatPanelState(created, await allJobs(), publicSettings(await loadSettings())),
+        };
+      });
+    const autoChat =
+      /^https?:\/\//i.test(tab.url || '') &&
+      !/^https:\/\/(?:www\.)?(?:x|twitter)\.com(?:\/|$)/i.test(tab.url || '');
+    if (autoChat) return createPageChat();
     try {
       const state = await chrome.tabs.sendMessage(tab.id, { type: 'panel:state' });
       if (state) {
@@ -262,6 +437,100 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
     }
   }
   if (panel && message.type === 'panel:command') {
+    const selectedId = Number.isInteger(message.windowId)
+      ? (await chrome.storage.session.get(selectedChatKey(message.windowId)))[
+          selectedChatKey(message.windowId)
+        ]
+      : undefined;
+    if (typeof selectedId === 'string' && selectedId === message.composerId)
+      return serial(async () => {
+        const chat = await pageChats.get(selectedId);
+        if (!chat) throw new Error('Conversation is unavailable.');
+        const command = message.command;
+        if (!command || typeof command.action !== 'string')
+          throw new Error('Invalid chat command.');
+        const jobs = (await allJobs()).filter((j) => j.mode === 'chat' && j.sessionId === chat.id);
+        if (command.action === 'cancel') {
+          for (const job of jobs) if (job.status === 'running') await manager.cancel(job.id);
+          return {};
+        }
+        if (jobs.some((j) => j.status === 'running'))
+          throw new Error('Wait for the current answer or stop it first.');
+        if (command.action === 'artifact') {
+          if (typeof command.artifactId !== 'string') throw new Error('Invalid artifact ID.');
+          if (command.operation === 'select') await artifacts.select(chat.id, command.artifactId);
+          else if (command.operation === 'version')
+            await artifacts.select(chat.id, command.artifactId, command.versionId ?? null);
+          else if (command.operation === 'remove')
+            await artifacts.remove(chat.id, command.artifactId);
+          else if (command.operation === 'label')
+            await artifacts.label(
+              chat.id,
+              command.artifactId,
+              command.versionId,
+              command.point,
+              command.offset,
+            );
+          else throw new Error('Invalid artifact command.');
+          await pageChats.save({ ...chat, updatedAt: Date.now() });
+          return {};
+        }
+        if (command.action === 'diagram') {
+          const doc = await diagrams.get(chat.id);
+          if (!doc) throw new Error('No diagram is available. Ask the assistant to draw one.');
+          if (command.operation === 'select') {
+            const cursor =
+              command.versionId === undefined || command.versionId === ''
+                ? -1
+                : doc.versions.findIndex((v) => v.id === command.versionId);
+            if (command.versionId && cursor < 0) throw new Error('Diagram version is unavailable.');
+            await diagrams.select(chat.id, cursor);
+          } else if (command.operation === 'label') {
+            if (currentDiagram(doc)?.id !== command.versionId)
+              throw new Error('The diagram changed. Try moving the label again.');
+            await diagrams.label(chat.id, command.point, command.offset);
+          } else throw new Error('Invalid diagram command.');
+          await pageChats.save({ ...chat, updatedAt: Date.now() });
+          return {};
+        }
+        const settings = await loadSettings();
+        if (command.action === 'model') {
+          if (typeof command.modelId !== 'string') throw new Error('Invalid model.');
+          modelSettings(settings, command.modelId);
+          await pageChats.save({ ...chat, modelId: command.modelId });
+          return {};
+        }
+        if (
+          command.action !== 'refine' ||
+          typeof command.instruction !== 'string' ||
+          !command.instruction.trim() ||
+          command.instruction.length > 4000
+        )
+          throw new Error('Enter a message of up to 4,000 characters.');
+        if (!modelSettings(settings, chat.modelId).model)
+          throw new Error('Choose a model in Settings first.');
+        if ((await allJobs()).filter((j) => j.status === 'running').length >= 3)
+          throw new Error('Three requests are already running. Stop one first.');
+        const job: Job = {
+          id: crypto.randomUUID(),
+          sessionId: chat.id,
+          composerId: chat.id,
+          mode: 'chat',
+          tabId: chat.context?.tabId ?? -1,
+          pageContext: chat.context,
+          modelId: chat.modelId || settings.defaultModelId || 'default',
+          brief: command.instruction.trim(),
+          allowScreenshot: command.allowScreenshot === true,
+          prompt: structuredClone(CHAT_PROMPT),
+          status: 'running',
+          progress: 'Starting…',
+          createdAt: Date.now(),
+        };
+        await manager.save(job);
+        await pageChats.save({ ...chat, updatedAt: job.createdAt });
+        void manager.run(job);
+        return {};
+      });
     if (!Number.isInteger(message.tabId) || typeof message.composerId !== 'string')
       throw new Error('Invalid target draft.');
     const target = await chrome.tabs.get(message.tabId);
@@ -420,6 +689,7 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
     });
   if (!options) throw new Error('This action is only available in extension settings.');
   if (message.type === 'chatgpt:status') return chatGPTAuth.status();
+  if (message.type === 'chatgpt:browser') return chatGPTAuth.startBrowser();
   if (message.type === 'chatgpt:start') return chatGPTAuth.start();
   if (message.type === 'chatgpt:poll') return chatGPTAuth.poll();
   if (message.type === 'chatgpt:cancel') return chatGPTAuth.cancel();
@@ -470,6 +740,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return;
     }
     // Call open synchronously in the message's user gesture; do not await storage or setOptions.
+    void serial(() => chrome.storage.session.remove(selectedChatKey(sender.tab!.windowId)));
     void chrome.sidePanel.open({ windowId: sender.tab!.windowId }).then(
       () => respond({ ok: true, value: null }),
       (e) => respond({ ok: false, error: String(e) }),
@@ -484,55 +755,98 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   return true;
 });
 chrome.action.onClicked.addListener((tab) => {
-  if (tab.windowId !== undefined) void chrome.sidePanel.open({ windowId: tab.windowId });
+  if (tab.windowId === undefined) return;
+  const windowId = tab.windowId;
+  // Keep Chrome's open call in the toolbar's user gesture.
+  void chrome.sidePanel.open({ windowId });
+  return serial(async () => {
+    await ready;
+    const selectionKey = selectedChatKey(windowId);
+    const selected = (await chrome.storage.session.get(selectionKey))[selectionKey];
+    if (typeof selected === 'string' && (await pageChats.get(selected))) return;
+    const chat = await pageChats.create(await captureCurrentPage(tab));
+    await chrome.storage.session.set({ [selectionKey]: chat.id });
+  });
+});
+// Capture the registered loopback redirect in the tab we opened. No local
+// listener is required: the URL update arrives even if localhost is unreachable.
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (!change.url?.startsWith('http://localhost:1455/auth/callback')) return;
+  void ready
+    .then(() => chatGPTAuth.completeBrowser(tabId, change.url!))
+    .then(async (handled) => {
+      if (handled) await chrome.tabs.update(tabId, { url: chrome.runtime.getURL('options.html') });
+    })
+    .catch(() => {});
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  void ready.then(() => chatGPTAuth.closeBrowser(tabId)).catch(() => {});
   void chrome.storage.session.remove(`compose:${tabId}`);
 });
 async function maintenance() {
-  await ready;
-  const jobs = await allJobs();
-  for (const job of jobs) {
-    if (job.status === 'running') {
-      if (Date.now() - job.createdAt > 10 * 60_000) {
-        await manager.cancel(job.id);
-        continue;
-      }
-      if (job.tabId === -1) {
-        if (Date.now() - (job.lastSeenAt || job.createdAt) < 15000) void manager.run(job);
-        else await manager.cancel(job.id);
-        continue;
-      }
-      // A live composer is the authority to resume; a browser restart must not recreate a closed draft.
-      try {
-        const response = await chrome.tabs.sendMessage(
-          job.tabId,
-          { type: 'composer:alive', composerId: job.composerId },
-          job.documentId ? { documentId: job.documentId } : {},
-        );
-        if (response?.alive) void manager.run(job);
-        else await manager.cancel(job.id);
-      } catch {
-        await manager.cancel(job.id);
-      }
-    } else if (Date.now() - job.createdAt > 24 * 60 * 60_000) {
-      // A newer refinement may still depend on the shared conversation database.
+  return serial(async () => {
+    await ready;
+    const jobs = await allJobs();
+    for (const chat of await pageChats.list()) {
       if (
-        !jobs.some(
-          (j) =>
-            sessionId(j) === sessionId(job) &&
-            (j.status === 'running' || Date.now() - j.createdAt <= 24 * 60 * 60_000),
-        )
-      )
-        await navigator.locks.request(database(sessionId(job)), () =>
-          IndexedDbStorage.delete(database(sessionId(job))),
-        );
-      await chrome.storage.local.remove(key(job.id));
+        Date.now() - chat.updatedAt > 24 * 60 * 60_000 &&
+        !jobs.some((j) => j.sessionId === chat.id && j.status === 'running')
+      ) {
+        await pageChats.delete(chat.id);
+        await diagrams.delete(chat.id);
+      }
     }
-  }
+    for (const job of jobs) {
+      if (job.status === 'running') {
+        if (Date.now() - job.createdAt > 10 * 60_000) {
+          await manager.cancel(job.id);
+          continue;
+        }
+        if (job.mode === 'chat') {
+          if (await pageChats.get(sessionId(job))) void manager.run(job);
+          else await manager.cancel(job.id);
+          continue;
+        }
+        if (job.tabId === -1) {
+          if (Date.now() - (job.lastSeenAt || job.createdAt) < 15000) void manager.run(job);
+          else await manager.cancel(job.id);
+          continue;
+        }
+        // A live composer is the authority to resume; a browser restart must not recreate a closed draft.
+        try {
+          const response = await chrome.tabs.sendMessage(
+            job.tabId,
+            { type: 'composer:alive', composerId: job.composerId },
+            job.documentId ? { documentId: job.documentId } : {},
+          );
+          if (response?.alive) void manager.run(job);
+          else await manager.cancel(job.id);
+        } catch {
+          await manager.cancel(job.id);
+        }
+      } else if (Date.now() - job.createdAt > 24 * 60 * 60_000) {
+        if (job.mode === 'chat') {
+          const chat = await pageChats.get(sessionId(job));
+          if (chat && Date.now() - chat.updatedAt <= 24 * 60 * 60_000) continue;
+        }
+        // A newer refinement may still depend on the shared conversation database.
+        if (
+          !jobs.some(
+            (j) =>
+              sessionId(j) === sessionId(job) &&
+              (j.status === 'running' || Date.now() - j.createdAt <= 24 * 60 * 60_000),
+          )
+        )
+          await navigator.locks.request(database(sessionId(job)), () =>
+            IndexedDbStorage.delete(database(sessionId(job))),
+          );
+        await chrome.storage.local.remove(key(job.id));
+      }
+    }
+  });
 }
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'pi-x-maintenance') void maintenance();
+  if (alarm.name === 'pi-x-maintenance') return maintenance();
 });
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.alarms.create('pi-x-maintenance', { periodInMinutes: 0.5 });

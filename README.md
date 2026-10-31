@@ -1,12 +1,12 @@
 <img src="assets/logo.png" width="96" alt="pi-x plush pi mascot logo" />
 
-# pi-x · Your writing partner for X
+# pi-x · Chat with the page you're on
 
-Turn an idea, a link, or rough notes into a draft through conversation.
+Understand a page, discuss a problem, and turn ideas into useful work through conversation.
 
-**pi-x** is a Chrome extension for composing drafts with an AI writing partner. Start a new draft, discuss what you want to say, research supporting context, and refine the wording in a dedicated side panel. When you are happy, apply the draft to X’s composer and post it yourself.
+**pi-x** is a Chrome side-panel companion for understanding and discussing the page you’re viewing. It attaches readable page content, metadata, and selected text to a conversation. Ask about an article, work through an AMC question and its published solution, or develop an idea through follow-up questions.
 
-You can also start from an existing post using **Pi Quote** in X’s repost menu. Quoting is one way to begin a draft; no existing post is needed to write your own.
+Writing on X is one capability: start an original post, quote, or reply, refine proposals, and insert them into X’s composer for manual review and posting. See the [product scope](docs/PRODUCT-SCOPE.md) for the product model and boundaries.
 
 [Download releases](https://github.com/sugarforever/pi-x/releases) · [Installation guide](INSTALL.md) · [Release guide](docs/RELEASING.md)
 
@@ -14,13 +14,48 @@ You can also start from an existing post using **Pi Quote** in X’s repost menu
 
 | Intent                | How it works                                                                     |
 | --------------------- | -------------------------------------------------------------------------------- |
+| Discuss a page | Ask questions with the current page’s content, metadata, and selection attached. |
+| Work through a problem | Request hints, discuss a published solution, or explore another approach. |
+| Draw and explore geometry | Draw a diagram, add auxiliary lines or angle marks, and revise it through chat. |
 | Compose from scratch | Start with an idea, a link, or notes and develop a draft through chat. |
 | Translate and rewrite | Turn a post into natural Chinese—or another language—with your own instructions. |
 | Match your voice      | Retrieve relevant examples you provide and use them as style references.         |
 | Read in context       | Read linked articles and rendered ancestor or quoted posts before drafting.      |
 | Research a claim      | Search the web and read supporting sources before composing a response.          |
 
-Each named prompt defines writing instructions. Search, page reading, conversation context and writing examples are available by default. Each intent can narrow its tools; Behavior settings can disable conversation context globally. The agent uses the enabled tools when needed. Every generation runs through **Pi Durable**, with persisted progress and recovery for interrupted work.
+In X writing modes, each named prompt defines writing instructions. Search, page reading, conversation context and writing examples are available by default. Each intent can narrow its tools; Behavior settings can disable conversation context globally. The agent uses the enabled tools when needed. Every generation runs through **Pi Durable**, with persisted progress and recovery for interrupted work.
+
+## Chat with a page
+
+Open a web page and click the pi-x toolbar icon. The panel shows **Page chat** with an attached snapshot; opening it makes no model request. Inspect **Page** to see its URL, available author/site/date metadata, selected text, extracted content, and any limitations. Send your first question to begin. For example, on an AMC solution page, ask “Give me a hint without revealing the answer,” then “Explain why that step works.”
+
+Page chat follows your message’s language and instructions rather than X writing presets. Common MathML/KaTeX notation, table rows, and code indentation are preserved during extraction. Text is limited to 24,000 characters and selections to 8,000 characters. Diagrams, embedded frames, protected pages, and the built-in PDF viewer may be unavailable; the panel reports partial or unsupported captures.
+
+Switching tabs or navigating keeps the conversation’s attached snapshot. **Use current page** explicitly captures a new snapshot for future messages. **Remove context** detaches it from future messages; earlier messages still retain their original context. Expand a message’s **Context** record to inspect its snapshot. **Allow screenshot of attached page** makes visual capture available for that request with a vision-capable model; capture is restricted to the attached page and requires refreshing if it has navigated.
+
+The **+** button and **Chat with this page** mode start a fresh page chat. **History → Continue chat** reopens a saved conversation even after its source tab closes. Chats and their snapshots are stored locally for 24 hours after the latest message or context update, with cleanup while Chrome runs. **Delete chat** removes a conversation, its jobs, and durable model history. Attached content, including signed-in page content, is sent to the selected model provider when you send a message. Optional research sources are separate from the attached page; basic chat works without Exa access.
+
+Choose **New post**, **Quote**, or **Reply** in the mode menu for X writing. **Write on X** below a chat answer opens a fresh X draft with that answer as a proposal; inserting it and posting remain explicit actions.
+
+## Draw and discuss math diagrams
+
+AI replies render Markdown with headings, emphasis, nested lists, quotes, tables, code blocks, links, and mathematical expressions (`$...$`, `\(...\)`, `$$...$$`, or `\[...\]`). Formatting also works in saved history and Markdown artifacts. User messages remain literal, and Copy or X reuse keeps the original reply text. Raw HTML and remote images are not activated.
+
+Page chat includes a shared **artifact workspace** for drawings, Markdown documents, and code. Ask for a deliverable, then revise it through conversation: “Create study notes for this problem,” followed by “Add a second approach.” Each artifact keeps its identity and its own version history. Chat cards open the result produced by that round.
+
+The panel shows a compact artifact chip by default. Click it or a chat artifact card to open a resizable preview window directly, even when the preview was docked. Click **Keep on top** in that window to open a pinned preview that remains visible while you type in chat. The original preview minimizes while pinned and restores when you close the pinned preview, leaving only one workspace visible. Pinning runs from the preview window rather than Chrome’s side panel, where that API can hang. Unresponsive pin requests time out without closing the regular preview. **Dock preview** shows the workspace inline; **Hide preview** returns the space to chat. Opening a separate preview also hides the docked workspace. The page is included automatically, with no context row in the composer. Use the toolbar’s **Chat options** menu for page details, screenshot settings, refresh, removal, and chat deletion.
+
+Use the artifact picker in the preview to switch outputs, **Preview / Source** to inspect them, and the version selector or **Undo** to restore a revision. **Expand** and **Open in tab** provide more room. **Copy** and **Download** export the selected content. Code is displayed as text; Markdown does not execute HTML or load embedded images. New artifact types can register validation, source/export formats, and a renderer in the shared framework.
+
+The workspace retains up to 12 artifacts per conversation and 24 revisions per artifact. Updates use version checks so stale or invalid edits preserve the existing result. Existing saved diagrams migrate automatically; deleting or expiring a conversation removes all its artifacts.
+
+Ask in **Page chat**, for example: “Draw the triangle stated in this AMC problem without giving me a hint.” Continue with “Add the midpoint M of BC and connect A to M,” “Mark angle ABC,” or a question about the construction. The existing model and research tools provide explanations; drawing is a tool-backed capability within the same conversation.
+
+The drawing tool accepts a structured geometry scene and validates it locally before displaying it. It supports points, segments and infinite lines, circles, polygons, angle marks, derived midpoints/perpendicular feet/intersections, and common solids. A bounded arithmetic tool helps compute coordinates. Declared distance, angle, equality, parallel, and perpendicular constraints are checked numerically; this is not a symbolic proof or a general constraint solver. The assistant must disclose illustrative assumptions and preserve the last valid diagram when an edit fails.
+
+When docked, the preview stays above the conversation. **Expand** opens a larger workspace; **Open in tab** gives the diagram the full browser width. Drag a point-name label such as A or B using its highlighted grab area, or focus it and use arrow keys. Vertex positions, length values and angle values stay fixed; zoom/reset controls adjust the view. Solid diagrams use rotatable 3D wireframes, with drag and rotation buttons. **SVG** and **PNG** export the current view. **Undo** and the version selector restore earlier drawings; up to 24 versions are retained, with a maximum of 1,000 drawing operations per conversation. Follow-up messages receive the currently selected diagram even after a manual undo.
+
+Diagrams stay with their page chat across navigation, closing the source tab, and reopening the panel. They share the conversation’s local retention and deletion behavior. No additional service, framework, or model connection is required. The geometry kernel and calculator are adapted from the MIT-licensed Smart project.
 
 ## Install
 
@@ -37,7 +72,9 @@ GitHub packages use Developer mode and update manually. See [INSTALL.md](INSTALL
 
 Open the side panel and choose Settings, then select a provider for each model profile.
 
-For **ChatGPT subscription**, click **Sign in with ChatGPT**, open the device sign-in link, and enter the displayed code. Enable device-code login in your ChatGPT account security settings or ask your workspace administrator if it is unavailable. Keep Settings open while authorizing; reopening Settings resumes a pending sign-in. Enter a model ID available to your account, then click **Test connection**. Subscription requests use Pi’s Codex Responses adapter and your account’s applicable usage limits. **Sign out** disconnects the shared ChatGPT account for every subscription profile. See [OpenAI’s authentication documentation](https://learn.chatgpt.com/docs/auth).
+For **ChatGPT subscription**, click **Sign in with ChatGPT** and complete the normal browser sign-in. The extension opens a dedicated tab, validates the OAuth state and PKCE callback, then returns that tab to Settings. No local helper or callback server is required. Enter a model ID available to your account, then click **Test connection**. Subscription requests use Pi’s Codex Responses adapter and your account’s applicable usage limits. **Sign out** disconnects the shared ChatGPT account for every subscription profile. See [OpenAI’s authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+If browser sign-in does not work in your environment, choose **Use device code instead**, open the device sign-in link, and enter the displayed code. This fallback requires device-code login to be enabled in your ChatGPT account or workspace. Pending sign-ins resume when Settings is reopened; browser sign-in also requires its original tab to stay open.
 
 For **OpenAI-compatible API**, configure:
 
@@ -57,7 +94,7 @@ For OpenAI-compatible providers, GPT-6 models use Pi’s **streaming Responses A
 
 On X’s home feed, click **Write with AI** beside the “What’s happening?” composer. The assistant works with that editor and preserves anything already typed. Describe the draft in chat, refine it, and apply it back to the same composer. Starting from this action does not open another X tab or call the model. The first chat message starts generation.
 
-Click the extension toolbar icon to open your writing partner, then choose **New draft** (or **Start a draft** on the welcome screen). pi-x opens a separate, blank X composer tab without changing any existing drafts. If X asks you to sign in, do that first, then choose New draft again.
+Open pi-x, then choose **New post** in the mode menu (or **Start a draft** on the welcome screen). pi-x opens a separate, blank X composer tab without changing any existing drafts. If X asks you to sign in, do that first, then choose New post again.
 
 Describe an idea, paste a link, or share rough notes. Opening the workspace does not call the model; your first message starts the draft. The **Original post** preset writes a fresh tweet rather than translating a source post. You can also choose one of your saved writing prompts.
 
@@ -90,7 +127,7 @@ When a version feels right, click **Insert**. Nothing writes into X until you ap
 
 Page reading opens a temporary background tab in your existing Chrome profile, using your normal login session, and returns the rendered page text to the writing agent. Browser reading is enabled by default through the extension’s required site access. Chrome may ask you to approve expanded access when updating. Tabs opened for reading are closed afterward. Search uses [Exa’s hosted MCP service](https://exa.ai/docs/get-started/exa-mcp), with no API key; free search usage is rate limited.
 
-The panel stays connected to the active tab in its own Chrome window. Posting remains a manual action through X’s **Post** button.
+X writing stays connected to the active composer tab in its own Chrome window. Page chats keep their attached snapshot across tab switches. Posting remains a manual action through X’s **Post** button.
 
 ## Quote, reply and reuse drafts
 
@@ -121,10 +158,10 @@ Writing examples guide style, not facts or opinions. Conversation context may op
 
 ## Your data and permissions
 
-- **Stored locally:** API keys, ChatGPT access and refresh tokens, prompts, writing samples, and draft sessions remain in this Chrome profile. Credentials are not synced or sent to X, and are not encrypted by the extension. Subscription tokens are stored separately from model settings, refreshed automatically, and sent only to OpenAI authentication and ChatGPT subscription endpoints.
-- **Sent to your provider:** the selected post, your instructions, current draft and refinement conversation, and any context retrieved by tools. Exa receives search queries. Pages requested for reading open in your Chrome session; extracted text, including signed-in content, is sent to your configured model provider. Requests to Exa omit browser cookies and model-provider credentials.
+- **Stored locally:** Page chats, context snapshots, API keys, ChatGPT access and refresh tokens, prompts, writing samples, and draft sessions remain in this Chrome profile. Credentials are not synced or sent to X, and are not encrypted by the extension. Subscription tokens are stored separately from model settings, refreshed automatically, and sent only to OpenAI authentication and ChatGPT subscription endpoints.
+- **Sent to your provider:** attached page content and metadata, the selected post, your instructions, current draft and refinement conversation, and any context retrieved by tools. Exa receives search queries. Pages requested for reading open in your Chrome session; extracted text, including signed-in content, is sent to your configured model provider. Requests to Exa omit browser cookies and model-provider credentials.
 - **Under your control:** tools are available automatically and the agent chooses when to use them. Search needs access to `https://mcp.exa.ai/*`; browser page reading uses required site access. Only trusted extension contexts can access stored settings and credentials.
-- **Easy to clear:** **Clear all extension data** removes API keys, ChatGPT tokens and pending sign-ins, prompts, writing samples, and sessions. Draft jobs expire after 24 hours while Chrome runs; a shared conversation is retained until its most recent job expires. Uninstalling removes extension storage; Chrome’s extension settings manage granted site access.
+- **Easy to clear:** **Clear all extension data** removes API keys, ChatGPT tokens and pending sign-ins, prompts, writing samples, page chats, and sessions. Page-chat retention follows the latest conversation activity; X draft jobs expire after 24 hours while Chrome runs; a shared conversation is retained until its most recent job expires. Uninstalling removes extension storage; Chrome’s extension settings manage granted site access.
 
 Screenshot research is available automatically through `capture_screenshot`. Ask the agent to inspect the current page, an open tab ID, or a URL. It can capture the viewport, crop a rectangle in viewport CSS pixels, or scroll a CSS selector into view and capture its visible area. Captures briefly activate the target tab, then restore the previous tab. Temporary URL tabs close afterward. Images are limited to 1600 pixels on the longest side and are sent to your configured model provider; use a model that supports image input. Screenshots are stored with the local draft conversation. Chrome’s screenshot API requires `<all_urls>` site access, though research tools accept only public HTTPS URLs.
 
@@ -134,7 +171,7 @@ X’s DOM is not a public integration API, so changes to its interface may requi
 
 Short links with hidden redirects, JavaScript-only pages, paywalls, deleted/private posts, and unloaded conversation history may be unavailable. Research tools report access failures; review generated claims before posting. Page URL checks reject IP literals, local names and nonstandard ports. Browser reading waits for page load and a quiet DOM; content requiring extra clicks, scrolling, or interactive verification may remain unavailable.
 
-Pi Durable saves progress; it does not keep Chrome running. Each job has an 8-response-turn limit, a 25-second timeout per model request, and a 10-minute lifetime. A matching live composer can reconnect and resume interrupted work. Recovery ends when that composer is gone. Requests interrupted before their responses were committed may be repeated and incur additional provider charges. Pi Durable’s upstream API is experimental; dependencies are locked for reproducibility.
+Pi Durable saves progress; it does not keep Chrome running. Each job has an 8-response-turn limit, a 25-second timeout per model request, and a 10-minute lifetime. Page chats recover independently of their source tab. X writing needs a matching live composer to reconnect and resume interrupted work; its recovery ends when that composer is gone. Requests interrupted before their responses were committed may be repeated and incur additional provider charges. Pi Durable’s upstream API is experimental; dependencies are locked for reproducibility.
 
 ## Build from source
 

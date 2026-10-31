@@ -1,5 +1,11 @@
+import { renderMarkdown } from './markdown';
+import { PinnedArtifactPreview } from './pinned-artifact';
+import { ArtifactWorkspace } from './artifact-workspace';
+import { fromDiagram } from '../artifacts/diagram-adapter';
+import { selectedArtifact } from '../artifacts/types';
 import type { historySessions } from '../background/history';
 import type { PublicSettings } from '../shared/types';
+import { draftParts } from './draft-parts';
 import { conversationItems } from './conversation-items';
 import { renderToolHistory } from './tool-history';
 import type { PanelCommand, PanelResult, PanelState, PanelTurn } from '../shared/panel';
@@ -8,8 +14,131 @@ const request = el<HTMLTextAreaElement>('request'),
   send = el<HTMLButtonElement>('send'),
   prompt = el<HTMLSelectElement>('prompt');
 let target: { tabId: number; state: PanelState } | null = null;
+const previewFragment = new URLSearchParams(location.hash.slice(1));
+const detachedPreview = previewFragment.get('preview') === 'window';
+const dockedChats = new Set<string>();
+const previewWindows = new Map<string, number>();
+let previewHostUpdates = Promise.resolve();
+const pinnedPreview = new PinnedArtifactPreview(
+  (action) => command(action),
+  undefined,
+  (visible) => {
+    if (!detachedPreview) return;
+    // Keep the PiP owner alive but out of the way. Serialize updates so a quick
+    // close cannot leave the host minimized after its pinned preview disappears.
+    previewHostUpdates = previewHostUpdates
+      .then(async () => {
+        await chrome.windows.update(
+          panelWindowId,
+          visible ? { state: 'minimized' } : { state: 'normal', focused: true },
+        );
+      })
+      .catch(() => {});
+  },
+);
+if (detachedPreview) document.body.classList.add('artifact-window');
+async function openArtifactWindow() {
+  if (!target || target.state.mode !== 'chat') return;
+  const chatId = target.state.composerId;
+  if (dockedChats.delete(chatId)) render();
+  const existing = previewWindows.get(chatId);
+  try {
+    // Side-panel PiP requests can remain pending in Chrome. Open a normal
+    // extension window directly; pinning is an explicit action in that window.
+    if (detachedPreview) {
+      try {
+        if (
+          await pinnedPreview.open(
+            chatId,
+            target.state.artifacts ?? fromDiagram(target.state.diagram),
+            target.state.busy,
+          )
+        )
+          return;
+        error('Keep on top is not supported in this browser. The preview remains open.');
+      } catch {
+        pinnedPreview.close();
+        error('Could not pin the preview. The preview remains open.');
+      }
+      return;
+    }
+    if (target?.state.composerId !== chatId) return;
+    if (existing !== undefined) {
+      try {
+        await chrome.windows.update(existing, { focused: true });
+        return;
+      } catch {
+        previewWindows.delete(chatId);
+      }
+    }
+    const window = await chrome.windows.create({
+      type: 'popup',
+      width: 900,
+      height: 720,
+      focused: true,
+      url:
+        chrome.runtime.getURL('sidepanel.html') +
+        '#artifact=' +
+        encodeURIComponent(chatId) +
+        '&preview=window',
+    });
+    if (window?.id !== undefined) previewWindows.set(chatId, window.id);
+  } catch (e) {
+    error(e instanceof Error ? e.message : 'Could not open artifact preview.');
+  }
+}
+const pageOptions = el<HTMLDetailsElement>('page-details');
+document.addEventListener('click', (event) => {
+  if (!pageOptions.contains(event.target as Node)) pageOptions.open = false;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') pageOptions.open = false;
+});
+el('preview-artifact').onclick = () => void openArtifactWindow();
+el('pin-preview').hidden = !detachedPreview;
+el('pin-preview').onclick = () => void openArtifactWindow();
+el('dock-artifact').onclick = () => {
+  if (!target) return;
+  const id = target.state.composerId;
+  if (dockedChats.has(id)) dockedChats.delete(id);
+  else dockedChats.add(id);
+  render();
+};
+const expandedDiagram = el<HTMLDialogElement>('diagram-expanded');
+const expandedViewer = new ArtifactWorkspace(el('expanded-diagram-view'), (action) =>
+  command(action),
+);
+const diagramViewer = new ArtifactWorkspace(
+  el('diagram-panel'),
+  (action) => command(action),
+  () => {
+    expandedViewer.update(
+      target?.state.artifacts ?? fromDiagram(target?.state.diagram),
+      !!target?.state.busy,
+    );
+    expandedDiagram.showModal();
+  },
+);
+el('close-diagram').onclick = () => (detachedPreview ? window.close() : expandedDiagram.close());
+expandedDiagram.addEventListener('cancel', () => {
+  if (detachedPreview) window.close();
+});
+el('open-diagram-tab').onclick = () => {
+  if (!target || target.state.mode !== 'chat') return;
+  void chrome.tabs
+    .create({
+      windowId: panelWindowId,
+      url:
+        chrome.runtime.getURL('sidepanel.html') +
+        '#artifact=' +
+        encodeURIComponent(target.state.composerId),
+    })
+    .catch((e) => error(String(e)));
+};
+
 let signature = '';
 const expandedTools = new Set<string>();
+const expandedRevisions = new Set<string>();
 let polling = false;
 let acting = false;
 let identity = '';
@@ -36,10 +165,34 @@ function updateSend() {
   request.style.height = 'auto';
   request.style.height = `${Math.min(140, Math.max(34, request.scrollHeight))}px`;
   prompt.disabled = !target || acting || !!target.state.busy;
-  send.disabled = acting || !target?.state.ready || target.state.busy || !request.value.trim();
-  el<HTMLButtonElement>('regenerate').disabled = acting || !target || target.state.busy;
-  for (const button of document.querySelectorAll<HTMLButtonElement>('.revision-regenerate'))
-    button.disabled = acting || !target || target.state.busy;
+  const state = target?.state;
+  const latest = state?.turns.findLast((t) => t.role === 'agent' && t.status !== 'error');
+  const changed = !!state && prompt.value !== (latest?.promptId || state.promptId);
+  const chatting = state?.mode === 'chat';
+  const label = state?.busy
+    ? 'Stop generating'
+    : chatting
+      ? 'Send message'
+      : !latest
+        ? 'Generate draft'
+        : changed || request.value.trim()
+          ? 'Generate new version'
+          : 'Generate again';
+  send.innerHTML = state?.busy
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>';
+  send.setAttribute('aria-label', label);
+  send.title = `${label} · Enter (Shift + Enter for a new line)`;
+  send.disabled =
+    acting ||
+    !state ||
+    (!state.busy &&
+      (!state.ready ||
+        (chatting ? !request.value.trim() : !state.post && !latest && !request.value.trim())));
+  const status = el('intent-status');
+  status.textContent =
+    !chatting && changed ? `“${prompt.selectedOptions[0]?.text}” selected. Generate to apply.` : '';
+  status.hidden = chatting || !changed || !!state?.busy;
 }
 async function command(command: PanelCommand, expectedTarget = target) {
   if (
@@ -89,23 +242,106 @@ function renderTurn(turn: PanelTurn, state: PanelState, historical = false) {
   article.setAttribute('aria-label', turn.role === 'user' ? 'You' : 'Assistant');
   const text = document.createElement('div');
   text.className = 'turn-text';
-  text.textContent = turn.text;
+  if (turn.role === 'agent') renderMarkdown(text, turn.text);
+  else text.textContent = turn.text;
   article.append(text);
-  if (turn.role === 'agent' && turn.status !== 'error') {
-    // Keep source links inline instead of duplicating them in a separate list.
-    let offset = 0;
-    text.replaceChildren();
-    for (const match of turn.text.matchAll(/https:\/\/[^\s<>"）)]+/g)) {
-      text.append(turn.text.slice(offset, match.index));
-      const link = document.createElement('a');
-      link.href = match[0];
-      link.textContent = match[0];
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      text.append(link);
-      offset = match.index! + match[0].length;
+  if (state.mode === 'chat') {
+    if (turn.role === 'agent' && turn.jobId && state.artifacts) {
+      const cards = document.createElement('div');
+      cards.className = 'artifact-cards';
+      const seen = new Set<string>();
+      for (const receipt of state.artifacts.operations
+        .filter((r) => r.jobId === turn.jobId)
+        .reverse()) {
+        if (seen.has(receipt.artifactId)) continue;
+        const artifact = state.artifacts.items.find((a) => a.id === receipt.artifactId);
+        if (!artifact) continue;
+        seen.add(artifact.id);
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'artifact-card';
+        card.textContent = `${artifact.kind === 'diagram' ? 'Drawing' : artifact.kind === 'code' ? 'Code' : 'Document'} · ${artifact.title}`;
+        card.setAttribute('aria-label', `Open artifact ${artifact.title}`);
+        card.disabled = state.busy || !artifact.versions.some((v) => v.id === receipt.versionId);
+        card.onclick = async () => {
+          const chatId = target?.state.composerId;
+          const ok = await command({
+            action: 'artifact',
+            operation: 'version',
+            artifactId: artifact.id,
+            versionId: receipt.versionId,
+          });
+          if (ok && chatId === target?.state.composerId) await openArtifactWindow();
+        };
+        cards.append(card);
+      }
+      if (cards.childElementCount) article.append(cards);
     }
-    text.append(turn.text.slice(offset));
+    if (turn.role === 'agent' && turn.status !== 'error') {
+      const actions = document.createElement('div');
+      actions.className = 'revision-actions';
+      const copy = document.createElement('button');
+      copy.className = 'quiet';
+      copy.textContent = 'Copy';
+      copy.onclick = () =>
+        void navigator.clipboard
+          .writeText(turn.text)
+          .catch(() => error('Select the response text to copy it.'));
+      const write = document.createElement('button');
+      write.className = 'quiet';
+      write.textContent = 'Write on X';
+      write.onclick = () => void newTweet(turn.id);
+      actions.append(copy, write);
+      article.append(actions);
+    }
+    return article;
+  }
+  if (turn.role === 'agent' && turn.status !== 'error') {
+    const sources = document.createElement('div');
+    sources.className = 'source-chips';
+    const seen = new Set<string>();
+    const appendDraft = (node: HTMLElement, value: string) => {
+      let offset = 0;
+      for (const match of value.matchAll(/https:\/\/[^\s<>"）)]+/g)) {
+        node.append(value.slice(offset, match.index));
+        if (!URL.canParse(match[0])) {
+          node.append(match[0]);
+          offset = match.index! + match[0].length;
+          continue;
+        }
+        if (!seen.has(match[0])) {
+          seen.add(match[0]);
+          const link = document.createElement('a');
+          link.href = match[0];
+          link.textContent = new URL(match[0]).hostname;
+          link.className = 'source-chip';
+          link.title = match[0];
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          sources.append(link);
+        }
+        offset = match.index! + match[0].length;
+      }
+      node.append(value.slice(offset));
+      node.textContent = node.textContent?.trimEnd() || '';
+    };
+    text.replaceChildren();
+    const parts = draftParts(turn.text);
+    if (parts) {
+      text.classList.add('thread-draft');
+      parts.forEach((part, index) => {
+        const post = document.createElement('div');
+        post.className = 'thread-post';
+        const body = document.createElement('div');
+        appendDraft(body, part);
+        const count = document.createElement('div');
+        count.className = 'thread-count';
+        count.textContent = `${index + 1}/${parts.length} · ${Array.from(part).length}`;
+        post.append(body, count);
+        text.append(post);
+      });
+    } else appendDraft(text, turn.text);
+    if (sources.childElementCount) article.append(sources);
     const actions = document.createElement('div');
     actions.className = 'revision-actions';
     const copy = document.createElement('button');
@@ -128,22 +364,8 @@ function renderTurn(turn: PanelTurn, state: PanelState, historical = false) {
       state.turns
         .filter((t) => t.role === 'agent' && t.status !== 'error')
         .findIndex((t) => t.id === turn.id) + 1;
-    meta.textContent = `v${version} · ${Array.from(turn.text).length} chars`;
+    meta.textContent = `v${version}${turn.promptName ? ` · ${turn.promptName}` : ''} · ${Array.from(turn.text).length} chars`;
     actions.append(meta, copy);
-    if (
-      !historical &&
-      state.turns.filter((t) => t.role === 'agent' && t.status !== 'error').at(-1)?.id === turn.id
-    ) {
-      const regenerate = document.createElement('button');
-      regenerate.className = 'icon-button revision-regenerate';
-      regenerate.setAttribute('aria-label', 'Regenerate');
-      regenerate.title = 'Regenerate';
-      regenerate.innerHTML =
-        '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>';
-      regenerate.disabled = state.busy || acting;
-      regenerate.onclick = () => void command({ action: 'regenerate', promptId: prompt.value });
-      actions.append(regenerate);
-    }
 
     if (turn.status === 'proposal' || turn.status === 'applied' || turn.status === 'reverted') {
       const dismiss = document.createElement('button');
@@ -184,15 +406,78 @@ function renderTurn(turn: PanelTurn, state: PanelState, historical = false) {
     }
     article.append(actions);
   }
+  const revisions = state.turns.filter((t) => t.role === 'agent' && t.status !== 'error');
+  if (
+    !historical &&
+    turn.role === 'agent' &&
+    turn.status !== 'error' &&
+    revisions.at(-1)?.id !== turn.id
+  ) {
+    const details = document.createElement('details');
+    details.className = 'earlier-revision';
+    if (turn.jobId) details.dataset.jobId = turn.jobId;
+    details.open = expandedRevisions.has(turn.id);
+    const summary = document.createElement('summary');
+    const index = state.turns.indexOf(turn);
+    const instruction = state.turns.slice(0, index).findLast((t) => t.role === 'user')?.text;
+    summary.textContent = `v${revisions.indexOf(turn) + 1} · ${Array.from(turn.text).length} chars${instruction ? ` · “${instruction.slice(0, 60)}”` : ''}`;
+    details.append(summary, article);
+    details.addEventListener('toggle', () => {
+      if (details.open) expandedRevisions.add(turn.id);
+      else expandedRevisions.delete(turn.id);
+    });
+    return details;
+  }
   return article;
 }
 function render() {
+  const logBeforeLayout = el('conversation');
+  const followBottom =
+    logBeforeLayout.scrollHeight - logBeforeLayout.scrollTop - logBeforeLayout.clientHeight < 80;
+  const diagram =
+    target?.state.mode === 'chat'
+      ? (target.state.artifacts ?? fromDiagram(target.state.diagram))
+      : undefined;
+  pinnedPreview.update(
+    target?.state.mode === 'chat' ? target.state.composerId : undefined,
+    diagram,
+    !!target?.state.busy,
+  );
+  el('page-context').hidden = target?.state.mode !== 'chat' || detachedPreview;
+  const optionsChat = target?.state.composerId || '';
+  if (pageOptions.dataset.chat !== optionsChat) {
+    pageOptions.open = false;
+    pageOptions.dataset.chat = optionsChat;
+  }
+  const docked = !!target && dockedChats.has(target.state.composerId) && !detachedPreview;
+  el('artifact-chip').hidden = !diagram?.items.length || detachedPreview;
+  el('preview-artifact').textContent = diagram?.items.length
+    ? `${selectedArtifact(diagram)?.title || 'Artifacts'}${diagram.items.length > 1 ? ` · ${diagram.items.length} artifacts` : ''} ↗`
+    : 'Artifacts ↗';
+  el('dock-artifact').textContent = docked ? 'Hide preview' : 'Dock preview';
+  el('dock-artifact').setAttribute('aria-pressed', String(docked));
+  el('workspace').classList.toggle('has-diagram', docked && !!diagram?.items.length);
+  el('workspace').classList.toggle('has-artifact', !!diagram?.items.length);
+  const artifactKind = selectedArtifact(diagram)?.kind;
+  expandedDiagram.setAttribute(
+    'aria-label',
+    artifactKind === 'diagram' ? 'Expanded diagram' : 'Expanded artifact',
+  );
+  el('close-diagram').textContent = detachedPreview
+    ? 'Close preview'
+    : artifactKind === 'diagram'
+      ? 'Close diagram'
+      : 'Close artifact';
+  diagramViewer.update(docked ? diagram : undefined, !!target?.state.busy);
+  if (expandedDiagram.open) expandedViewer.update(diagram, !!target?.state.busy);
   el('empty').hidden = !!target || historyOpen;
   el('workspace').hidden = !target || historyOpen;
-  prompt.hidden = !target;
-  el('regenerate').hidden = !target;
-  const nextIdentity = target ? `${target.tabId}:${target.state.composerId}` : '';
+  prompt.hidden = !target || target.state.mode === 'chat';
+  const nextIdentity = target
+    ? `${detachedPreview ? 'artifact' : target.tabId}:${target.state.composerId}`
+    : '';
   if (nextIdentity !== identity) {
+    if (expandedDiagram.open) expandedDiagram.close();
     unsent.set(identity, request.value);
     identity = nextIdentity;
     selectedPrompt = promptChoices.get(identity) || '';
@@ -202,6 +487,8 @@ function render() {
     error('');
     signature = '';
     expandedTools.clear();
+    expandedRevisions.clear();
+    el<HTMLInputElement>('allow-screenshot').checked = false;
     if (target) el('new-status').textContent = '';
   }
   if (!target) {
@@ -210,13 +497,25 @@ function render() {
   }
   const state = target.state;
   const composing = state.mode === 'compose';
-  el('regenerate').hidden = state.turns.some((t) => t.role === 'agent' && t.status !== 'error');
-  el('source-details').hidden = composing;
+  const chatting = state.mode === 'chat';
+  el('chat-mode').classList.toggle('active', chatting);
+  if (chatting) renderPageContext(state);
+  el('mode-label').textContent = chatting
+    ? 'Page chat'
+    : composing
+      ? 'New post'
+      : state.mode === 'reply'
+        ? 'Reply'
+        : 'Quote';
+  el('source-details').hidden = composing || chatting;
   el('source-text').textContent = state.post?.text || '';
   el('draft-details').hidden = !state.currentDraft.trim();
-  el('context-row').hidden = composing && !state.currentDraft.trim() && !state.canUndo;
-  request.placeholder =
-    composing && !state.turns.length ? 'What do you want to say?' : 'Ask for a change…';
+  el('context-row').hidden = !state.canUndo;
+  request.placeholder = chatting
+    ? 'Ask about this page…'
+    : composing && !state.turns.length
+      ? 'What do you want to say?'
+      : 'Additional instructions (optional)';
   el('source-author').textContent = state.post?.author || '';
   el('source-snippet').textContent = state.post?.text || '';
   el('quote-mode').classList.toggle('active', state.mode === 'quote');
@@ -233,7 +532,6 @@ function render() {
   el('progress').textContent = state.busy ? state.status : '';
   el('progress').title = state.status;
   el('progress').parentElement!.hidden = !state.busy;
-  el('stop').hidden = !state.busy;
   el('undo').hidden = !state.canUndo;
   if (
     prompt.options.length !== state.prompts.length ||
@@ -244,10 +542,16 @@ function render() {
   }
   if (selectedPrompt && !state.prompts.some((p) => p.id === selectedPrompt)) selectedPrompt = '';
   if (document.activeElement !== prompt) prompt.value = selectedPrompt || state.promptId;
-  const nextSignature = JSON.stringify([state.turns, state.busy, state.toolCalls]);
+  const nextSignature = JSON.stringify([
+    state.mode,
+    state.turns,
+    state.busy,
+    state.toolCalls,
+    state.artifacts?.items.map((a) => [a.id, a.title, a.cursor, a.versions.map((v) => v.id)]),
+  ]);
   if (signature !== nextSignature) {
     const log = el('conversation');
-    const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const nearBottom = followBottom;
     log.replaceChildren(
       ...conversationItems(state.turns, state.toolCalls || []).map((item) =>
         item.kind === 'turn'
@@ -263,12 +567,65 @@ function render() {
     model.value = state.modelId || publicConfig?.defaultModelId || 'default';
   model.disabled = state.busy || acting;
   updateSend();
+  if (followBottom) logBeforeLayout.scrollTop = logBeforeLayout.scrollHeight;
+}
+function renderPageContext(state: PanelState) {
+  const page = state.pageContext;
+  el('page-title').textContent = page?.title || 'No page attached';
+  const link = el<HTMLAnchorElement>('page-url');
+  link.textContent = page?.url || '';
+  link.removeAttribute('href');
+  if (page && /^https?:\/\//i.test(page.url)) link.href = page.url;
+  el('page-metadata').textContent = page
+    ? [
+        page.siteName,
+        page.author,
+        page.description,
+        page.language,
+        page.publishedAt && `Published: ${page.publishedAt}`,
+        page.updatedAt && `Updated: ${page.updatedAt}`,
+        page.canonicalUrl && `Canonical: ${page.canonicalUrl}`,
+        `Captured: ${new Date(page.capturedAt).toLocaleString()}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+  el('page-limitations').textContent = page?.limitations.join(' ') || '';
+  el('page-selection').textContent = page?.selection ? `Selected text: ${page.selection}` : '';
+  el('page-text').textContent = page?.text || '';
+  el('page-notice').textContent = state.pageChanged
+    ? `You’re viewing ${state.activePageTitle || 'another page'}. This chat keeps its attached snapshot. Use current page to update it.`
+    : page
+      ? 'Refresh captures the current page for future messages.'
+      : 'No page attached. Earlier messages may still contain previous context.';
+  for (const id of ['refresh-page', 'remove-page', 'delete-chat'])
+    el<HTMLButtonElement>(id).disabled = acting;
+}
+async function pageAction(action: 'new' | 'refresh' | 'remove' | 'resume' | 'delete', id?: string) {
+  acting = true;
+  updateSend();
+  try {
+    await rpc({ type: 'panel:chat', windowId: panelWindowId, ...(id ? { id } : {}), action });
+    setHistory(false);
+    await refresh();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Could not update page context.';
+    error(message);
+    el('new-status').textContent = message;
+  } finally {
+    acting = false;
+    render();
+  }
 }
 async function refresh() {
   if (polling) return;
   polling = true;
   try {
     target = await rpc<typeof target>({ type: 'panel:get', windowId: panelWindowId });
+    if (detachedPreview && !target) {
+      window.close();
+      return;
+    }
     render();
   } catch {
     target = null;
@@ -337,6 +694,25 @@ const sourceDetails = el<HTMLDetailsElement>('source-details');
 sourceDetails.addEventListener('toggle', () => {
   sourceDetails.querySelector('.source-show')!.textContent = sourceDetails.open ? 'Hide' : 'Show';
 });
+el('mode-menu').addEventListener('click', (event) => {
+  if ((event.target as HTMLElement).closest('button'))
+    el<HTMLDetailsElement>('mode-menu').open = false;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') el<HTMLDetailsElement>('mode-menu').open = false;
+});
+document.addEventListener('click', (event) => {
+  if (!el('mode-menu').contains(event.target as Node))
+    el<HTMLDetailsElement>('mode-menu').open = false;
+});
+el('chat-mode').onclick = () => void pageAction('new');
+el('start-chat').onclick = () => void pageAction('new');
+el('refresh-page').onclick = () => void pageAction('refresh', target?.state.composerId);
+el('remove-page').onclick = () => void pageAction('remove', target?.state.composerId);
+el('delete-chat').onclick = () => {
+  if (confirm('Delete this conversation and its saved context?'))
+    void pageAction('delete', target?.state.composerId);
+};
 el('quote-mode').onclick = () => void openMode('quote');
 el('reply-mode').onclick = () => void openMode('reply');
 el('compose-mode').onclick = () => {
@@ -360,7 +736,8 @@ el('history-toggle').onclick = () => {
       historyData = sessions;
       content.replaceChildren();
       if (!sessions.length) {
-        content.textContent = 'No drafts yet. Your conversations appear here for 24 hours.';
+        content.textContent =
+          'No conversations yet. Chats are kept locally for 24 hours after their latest activity.';
         return;
       }
       for (const session of sessions) {
@@ -370,7 +747,7 @@ el('history-toggle').onclick = () => {
         title.textContent = session.title;
         const meta = document.createElement('span');
         meta.className = 'history-meta';
-        meta.textContent = `${session.mode === 'compose' ? 'New post' : session.mode === 'reply' ? 'Reply' : 'Quote'} · ${new Date(session.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+        meta.textContent = `${session.mode === 'chat' ? 'Page chat' : session.mode === 'compose' ? 'New post' : session.mode === 'reply' ? 'Reply' : 'Quote'} · ${new Date(session.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
         button.append(title, meta);
         button.onclick = () => showHistorical(session.id);
         content.append(button);
@@ -390,6 +767,13 @@ function showHistorical(id: string) {
   back.textContent = '← All conversations';
   back.onclick = () => el('history-toggle').click();
   content.append(back);
+  if (session.mode === 'chat') {
+    const resume = document.createElement('button');
+    resume.textContent = 'Continue chat';
+    resume.className = 'primary';
+    resume.onclick = () => void pageAction('resume', session.id);
+    content.append(resume);
+  }
   if (session.post) {
     const source = document.createElement('a');
     source.href = session.post.url;
@@ -417,15 +801,16 @@ function showHistorical(id: string) {
         : renderToolHistory(item.traces, expandedTools, `history:${item.jobId}`),
     );
 }
-el('new-tweet').onclick = () => void newTweet();
+el('new-tweet').setAttribute('aria-label', 'New chat');
+el('new-tweet').title = 'New chat';
+el('new-tweet').onclick = () => void pageAction('new');
 el('start-tweet').onclick = () => void newTweet();
 el('settings').onclick = () => void rpc({ type: 'settings:open' }).catch((e) => error(String(e)));
 prompt.onchange = () => {
   selectedPrompt = prompt.value;
   promptChoices.set(identity, selectedPrompt);
+  updateSend();
 };
-el('regenerate').onclick = () => void command({ action: 'regenerate', promptId: prompt.value });
-el('stop').onclick = () => void command({ action: 'cancel' });
 el('undo').onclick = () => void command({ action: 'undo' });
 el('keep').onclick = () => {
   confirmation = undefined;
@@ -449,27 +834,56 @@ request.onkeydown = (e) => {
 el<HTMLFormElement>('chat-form').onsubmit = (e) => {
   e.preventDefault();
   if (send.disabled) return;
+  if (target?.state.busy) {
+    void command({ action: 'cancel' });
+    return;
+  }
+  if (!request.value.trim()) {
+    void command({ action: 'regenerate', promptId: prompt.value });
+    return;
+  }
   const instruction = request.value.trim(),
     captured = target;
   request.value = '';
   unsent.set(identity, '');
   updateSend();
-  void command({ action: 'refine', instruction, promptId: prompt.value }, captured).then((ok) => {
+  void command(
+    target?.state.mode === 'chat'
+      ? {
+          action: 'refine',
+          instruction,
+          ...(el<HTMLInputElement>('allow-screenshot').checked ? { allowScreenshot: true } : {}),
+        }
+      : { action: 'refine', instruction, promptId: prompt.value },
+    captured,
+  ).then((ok) => {
     if (!ok && target?.state.composerId === captured?.state.composerId && !request.value) {
       request.value = instruction;
+      unsent.set(identity, instruction);
       updateSend();
     }
   });
 };
 void chrome.windows
   .getCurrent()
-  .then((window) => {
+  .then(async (window) => {
     panelWindowId = window.id!;
     void loadPublicSettings().catch((e) => error(String(e)));
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.settings) void loadPublicSettings();
     });
-    void refresh();
+    const fragment = previewFragment;
+    const diagramChat = fragment.get('artifact') || fragment.get('diagram');
+    if (diagramChat && diagramChat.length <= 100)
+      await rpc({ type: 'panel:chat', windowId: panelWindowId, action: 'resume', id: diagramChat });
+    await refresh();
+    if (diagramChat && target?.state.mode === 'chat') {
+      expandedViewer.update(
+        target.state.artifacts ?? fromDiagram(target.state.diagram),
+        target.state.busy,
+      );
+      expandedDiagram.showModal();
+    }
     setInterval(() => void refresh(), 600);
   })
   .catch(() => error('Could not connect to this browser window. Reopen the assistant.'));

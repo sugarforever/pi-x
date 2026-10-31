@@ -55,3 +55,46 @@ it('closes the tab when extraction fails', async () => {
   await expect(readBrowserPage('https://example.com/')).rejects.toThrow('No access');
   expect(remove).toHaveBeenCalledWith(8);
 });
+it('captures metadata, selection, table structure and accessible math for page discussion', () => {
+  document.documentElement.innerHTML = `<html lang="en"><head><title>AMC discussion</title><link rel="canonical" href="/amc/1"><meta name="author" content="Math Circle"><meta property="og:site_name" content="Practice"><meta name="description" content="A worked problem"><meta property="article:published_time" content="2026-10-01"></head><body><nav>Menu</nav><main><h1>Problem 1</h1><p>Find <span class="katex"><span class="katex-mathml"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x^2 + 1</annotation></semantics></math></span><span class="katex-html">duplicate</span></span>.</p><table><tr><td>A</td><td>12</td></tr><tr><td>B</td><td>24</td></tr></table><img src="diagram.png" alt="Triangle ABC"><iframe src="/solution"></iframe></main></body></html>`;
+  vi.stubGlobal('location', { href: 'https://example.com/amc?problem=1' });
+  document.documentElement.lang = 'en';
+  const range = document.createRange();
+  range.selectNodeContents(document.querySelector('h1')!);
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  const page = extractPage();
+  expect(page).toMatchObject({
+    canonicalUrl: 'https://example.com/amc/1',
+    author: 'Math Circle',
+    siteName: 'Practice',
+    description: 'A worked problem',
+    publishedAt: '2026-10-01',
+    language: 'en',
+    selection: 'Problem 1',
+  });
+  expect(page.text).toContain('x^2 + 1');
+  expect(page.text).not.toContain('duplicate');
+  expect(page.text).toContain('A | 12\nB | 24');
+  expect(page.text).toContain('Triangle ABC');
+  expect(page.limitations.join(' ')).toMatch(/images|diagrams/i);
+  expect(page.limitations.join(' ')).toMatch(/frame/i);
+});
+it('bounds captures and marks unreadable content rather than claiming a complete page', () => {
+  document.body.innerHTML = `<main><p>${'a'.repeat(25000)}</p></main>`;
+  const page = extractPage();
+  expect(page.text.length).toBe(24000);
+  expect(page.truncated).toBe(true);
+  expect(page.limitations.join(' ')).toMatch(/truncat/i);
+  document.body.innerHTML = '<canvas></canvas>';
+  expect(extractPage().limitations.join(' ')).toMatch(/readable text/i);
+});
+
+it('preserves code indentation and native fractions and exponents', () => {
+  document.body.innerHTML =
+    '<main><pre>def solve():\n    if True:\n        return "a  b"</pre><math><mfrac><mn>1</mn><mn>2</mn></mfrac><mo>+</mo><msup><mi>x</mi><mn>2</mn></msup></math></main>';
+  const page = extractPage();
+  expect(page.text).toContain('def solve():\n    if True:\n        return "a  b"');
+  expect(page.text).toContain('(1)/(2)');
+  expect(page.text).toContain('(x)^(2)');
+});

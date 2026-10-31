@@ -44,14 +44,20 @@ export function researchUrl(value: string): URL {
 }
 export function xPostUrl(value: string): string {
   const url = new URL(value);
+  const post = url.pathname.match(
+    /^\/([A-Za-z0-9_]+)\/status\/(\d+)(?:\/(?:photo|video)\/\d+)?\/?$/,
+  );
   if (
     !['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'].includes(url.hostname) ||
     url.protocol !== 'https:' ||
-    !/^\/[A-Za-z0-9_]+\/status\/\d+\/?$/.test(url.pathname)
+    url.username ||
+    url.password ||
+    url.port ||
+    !post
   ) {
     throw new Error('Invalid X post URL.');
   }
-  return `https://x.com${url.pathname.replace(/\/$/, '')}`;
+  return `https://x.com/${post[1]}/status/${post[2]}`;
 }
 export function originPattern(value: string): string {
   return `${providerUrl(value).origin}/*`;

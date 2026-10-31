@@ -70,9 +70,37 @@ export interface Refinement {
   instruction: string;
   currentDraft: string;
 }
+export interface PageContext {
+  id: string;
+  tabId: number;
+  capturedAt: number;
+  url: string;
+  title: string;
+  text: string;
+  truncated: boolean;
+  limitations: string[];
+  canonicalUrl?: string;
+  author?: string;
+  siteName?: string;
+  description?: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  language?: string;
+  selection?: string;
+}
+export interface PageChat {
+  id: string;
+  context?: PageContext;
+  title: string;
+  modelId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
 export interface Job {
   toolCalls?: ToolTrace[];
-  mode?: 'quote' | 'compose' | 'reply';
+  mode?: 'quote' | 'compose' | 'reply' | 'chat';
+  pageContext?: PageContext;
+  allowScreenshot?: boolean;
   modelId?: string;
   brief?: string;
   initialDraft?: string;
@@ -122,6 +150,7 @@ export interface Reply<T> {
 
 export interface ChatGPTStatus {
   state: 'signed-out' | 'pending' | 'signed-in';
+  method?: 'browser' | 'device';
   userCode?: string;
   expiresAt?: number;
   nextPollAt?: number;

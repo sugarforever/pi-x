@@ -15,7 +15,7 @@ export function renderToolHistory(traces: ToolTrace[], expanded: Set<string>, gr
   const running = traces.filter((trace) => trace.status === 'running').length;
   const root = details(
     groupId,
-    `Tools · ${traces.length}${running ? ` · ${running} running` : ''}`,
+    `${traces.length} steps · ${[...new Set(traces.map((trace) => trace.name))].join(', ')}${running ? ` · ${running} running` : ''}`,
   );
   root.className = 'tool-history';
   root.dataset.jobId = groupId;

@@ -52,3 +52,9 @@ Files: `README.md`, browser integration tests as needed.
 ## Verification results
 
 `npm run check` passed (121 tests, typecheck and browser build). `npm run test:browser` passed, including a simulated subscription device flow, Settings reload recovery, Codex request, sign-out and restored custom endpoint. The browser suite also covered existing compose/research behavior. Code review identified transient refresh credential loss; it was fixed and regression tested. Live authorization with a real ChatGPT account was not exercised.
+
+## Browser sign-in follow-up
+
+User requested standard browser sign-in as the default. Use Pi's existing authorization-code protocol with a random state and S256 PKCE. Persist the verifier, state, originating tab ID and expiry in background-only storage. Observe the registered localhost callback in that exact tab, validate its full origin/path and state, exchange once, then navigate to Settings. Keep device-code sign-in as an explicit fallback. Test tab binding, wrong state/origin, PKCE derivation, restart recovery, expiry, cancellation and a Chrome callback navigation without a local listener.
+
+Browser follow-up verification: `npm run check` passed with 126 tests; formatting and diff checks passed. `npm run test:browser` passed, including both sign-in methods and capture of a loopback callback without a local server. Code review found no substantive issue. Real-account authorization remains unverified.

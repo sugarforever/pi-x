@@ -181,3 +181,163 @@ it.each(['offline', 'rate-limit', 'server-error'])(
     expect(await f.auth.getAuth()).toEqual({ apiKey: jwt() });
   },
 );
+it('opens browser OAuth with PKCE and exchanges only the matching callback after a restart', async () => {
+  const f = setup();
+  let opened = '';
+  const options = {
+    ...f.options,
+    createTab: async () => 42,
+    navigateTab: async (_id: number, url: string) => {
+      opened = url;
+    },
+  };
+  const auth = createChatGPTAuth(options);
+  const status = await auth.startBrowser();
+  expect(status).toMatchObject({ state: 'pending', method: 'browser' });
+  const url = new URL(opened);
+  expect(url.origin + url.pathname).toBe('https://auth.openai.com/oauth/authorize');
+  expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:1455/auth/callback');
+  expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  expect(url.searchParams.get('code_challenge')).toHaveLength(43);
+  const state = url.searchParams.get('state')!;
+  const restarted = createChatGPTAuth(options);
+  expect(
+    await restarted.completeBrowser(
+      99,
+      `http://localhost:1455/auth/callback?code=secret-code&state=${state}`,
+    ),
+  ).toBe(false);
+  expect(
+    await restarted.completeBrowser(
+      42,
+      `https://evil.example/auth/callback?code=secret-code&state=${state}`,
+    ),
+  ).toBe(false);
+  expect(
+    await restarted.completeBrowser(
+      42,
+      'http://localhost:1455/auth/callback?code=secret-code&state=wrong',
+    ),
+  ).toBe(false);
+  expect(f.fetcher).not.toHaveBeenCalled();
+  f.fetcher.mockResolvedValueOnce(tokens());
+  expect(
+    await restarted.completeBrowser(
+      42,
+      `http://localhost:1455/auth/callback?code=secret-code&state=${state}`,
+    ),
+  ).toBe(true);
+  expect((await restarted.status()).state).toBe('signed-in');
+  const params = new URLSearchParams(String(f.fetcher.mock.calls[0][1]?.body));
+  expect(params.get('code')).toBe('secret-code');
+  expect(params.get('code_verifier')).toHaveLength(43);
+  expect(params.get('redirect_uri')).toBe('http://localhost:1455/auth/callback');
+  const challenge = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(params.get('code_verifier')!)),
+  );
+  expect(
+    btoa(String.fromCharCode(...challenge))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, ''),
+  ).toBe(url.searchParams.get('code_challenge'));
+  expect(JSON.stringify(await restarted.status())).not.toMatch(/secret-code|signature|verifier/);
+  expect(
+    await restarted.completeBrowser(
+      42,
+      `http://localhost:1455/auth/callback?code=secret-code&state=${state}`,
+    ),
+  ).toBe(false);
+});
+it('expires or cancels browser sign-in and ignores late callbacks', async () => {
+  const f = setup();
+  let opened = '';
+  const auth = createChatGPTAuth({
+    ...f.options,
+    createTab: async () => 42,
+    navigateTab: async (_id, url) => {
+      opened = url;
+    },
+  });
+  await auth.startBrowser();
+  const state = new URL(opened).searchParams.get('state');
+  f.advance(15 * 60_000);
+  expect(
+    await auth.completeBrowser(
+      42,
+      `http://localhost:1455/auth/callback?code=secret-code&state=${state}`,
+    ),
+  ).toBe(false);
+  expect((await auth.status()).state).toBe('signed-out');
+  await auth.startBrowser();
+  await auth.cancel();
+  expect(
+    await auth.completeBrowser(
+      42,
+      `http://localhost:1455/auth/callback?code=secret-code&state=${new URL(opened).searchParams.get('state')}`,
+    ),
+  ).toBe(false);
+  expect(f.fetcher).not.toHaveBeenCalled();
+});
+it('clears browser authorization when the sign-in tab closes or authorization is declined', async () => {
+  const f = setup();
+  let opened = '';
+  const auth = createChatGPTAuth({
+    ...f.options,
+    createTab: async () => 42,
+    navigateTab: async (_id, url) => {
+      opened = url;
+    },
+  });
+  await auth.startBrowser();
+  await auth.closeBrowser(99);
+  expect((await auth.status()).state).toBe('pending');
+  await auth.closeBrowser(42);
+  expect(await auth.status()).toMatchObject({
+    state: 'signed-out',
+    error: expect.stringMatching(/closed/i),
+  });
+  await auth.startBrowser();
+  const state = new URL(opened).searchParams.get('state');
+  expect(
+    await auth.completeBrowser(
+      42,
+      `http://localhost:1455/auth/callback?state=${state}&error=access_denied&error_description=private-data`,
+    ),
+  ).toBe(true);
+  expect(await auth.status()).toMatchObject({
+    state: 'signed-out',
+    error: expect.stringMatching(/failed/i),
+  });
+  expect(JSON.stringify(await auth.status())).not.toContain('private-data');
+  expect(f.fetcher).not.toHaveBeenCalled();
+});
+it('does not retain a browser credential when cancelled during token exchange', async () => {
+  const f = setup();
+  let opened = '';
+  const auth = createChatGPTAuth({
+    ...f.options,
+    createTab: async () => 42,
+    navigateTab: async (_id, url) => {
+      opened = url;
+    },
+  });
+  await auth.startBrowser();
+  let release!: (response: Response) => void;
+  f.fetcher.mockImplementationOnce(
+    async () =>
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const callback = auth.completeBrowser(
+    42,
+    `http://localhost:1455/auth/callback?state=${new URL(opened).searchParams.get('state')}&code=private-code`,
+  );
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  const cancel = auth.cancel();
+  release(tokens());
+  await Promise.all([callback, cancel]);
+  expect((await auth.status()).state).toBe('signed-out');
+  expect(f.state().credential).toBeUndefined();
+});

@@ -312,8 +312,31 @@ function renderModels() {
     remove.className = 'delete';
     remove.textContent = 'Remove';
     remove.disabled = state.models!.length === 1;
-    remove.onclick = () => {
+    remove.onclick = async () => {
       commitProfile();
+      if (profile.provider === 'chatgpt') {
+        remove.disabled = true;
+        try {
+          const account = await rpc<ChatGPTStatus>({ type: 'chatgpt:status' });
+          if (account.state === 'signed-in') {
+            edit.click();
+            renderAccount(account);
+            notify(
+              'connection-status',
+              'Sign out of ChatGPT before removing this model. Signing out disconnects all ChatGPT subscription profiles.',
+            );
+            $('chatgpt-signout').focus();
+            return;
+          }
+        } catch (error) {
+          edit.click();
+          notify('connection-status', error);
+          return;
+        } finally {
+          remove.disabled = state.models!.length === 1;
+        }
+      }
+      if (state.models!.length === 1) return;
       state.models = state.models!.filter((m) => m.id !== profile.id);
       if (state.defaultModelId === profile.id) state.defaultModelId = state.models[0].id;
       if (editingModelId === profile.id) {
@@ -364,28 +387,36 @@ function renderAccount(status: ChatGPTStatus) {
   const pending = status.state === 'pending';
   const signedIn = status.state === 'signed-in';
   $('chatgpt-signin').hidden = pending || signedIn;
+  $('chatgpt-device-signin').hidden = pending || signedIn;
   $('chatgpt-cancel').hidden = !pending;
   $('chatgpt-signout').hidden = !signedIn;
-  $('chatgpt-device').hidden = !pending;
+  $('chatgpt-device').hidden = !pending || status.method === 'browser';
   $('chatgpt-code').textContent = status.userCode || '';
   notify(
     'chatgpt-status',
     status.error ||
       (pending
-        ? 'Waiting for ChatGPT authorization…'
+        ? status.method === 'browser'
+          ? 'Complete sign-in in the ChatGPT browser tab…'
+          : 'Waiting for ChatGPT authorization…'
         : signedIn
           ? 'Signed in with ChatGPT.'
           : 'Signed out.'),
   );
 }
-async function accountAction(action: 'status' | 'start' | 'poll' | 'cancel' | 'signout') {
+async function accountAction(
+  action: 'status' | 'browser' | 'start' | 'poll' | 'cancel' | 'signout',
+) {
   stopAccountPolling();
   const generation = accountGeneration;
-  const buttons = ['chatgpt-signin', 'chatgpt-cancel', 'chatgpt-signout'].map((id) =>
-    $<HTMLButtonElement>(id),
-  );
+  const buttons = [
+    'chatgpt-signin',
+    'chatgpt-device-signin',
+    'chatgpt-cancel',
+    'chatgpt-signout',
+  ].map((id) => $<HTMLButtonElement>(id));
   for (const button of buttons) button.disabled = true;
-  if (action === 'start') notify('chatgpt-status', 'Starting sign-in…');
+  if (action === 'start' || action === 'browser') notify('chatgpt-status', 'Starting sign-in…');
   try {
     const status = await rpc<ChatGPTStatus>({ type: `chatgpt:${action}` });
     if (generation !== accountGeneration) return;
@@ -405,7 +436,8 @@ async function accountAction(action: 'status' | 'start' | 'poll' | 'cancel' | 's
     if (generation === accountGeneration) for (const button of buttons) button.disabled = false;
   }
 }
-$('chatgpt-signin').onclick = () => void accountAction('start');
+$('chatgpt-signin').onclick = () => void accountAction('browser');
+$('chatgpt-device-signin').onclick = () => void accountAction('start');
 $('chatgpt-cancel').onclick = () => void accountAction('cancel');
 $('chatgpt-signout').onclick = () => void accountAction('signout');
 async function permissions(s: Settings) {

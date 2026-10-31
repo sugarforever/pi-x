@@ -197,3 +197,14 @@ it('recognizes an article quote card by its author and title without tweetText',
     }),
   ).toBe(false);
 });
+
+it('canonicalizes a quoted image link before sending the source to the background', () => {
+  document.body.innerHTML = article(
+    '2116308846721511576',
+    'people of pi (durable)',
+    '<div role="link"><div data-testid="tweetText">performance optimizations</div><a href="/badlogicgames/status/2116078693827428383/photo/1"><img alt="Graph"></a></div>',
+  );
+  expect(extractPost(document.querySelector('article')!)?.quoted?.url).toBe(
+    'https://x.com/badlogicgames/status/2116078693827428383',
+  );
+});

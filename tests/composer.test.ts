@@ -108,7 +108,7 @@ it('can reapply an applied revision after clearing, preserving edit and undo pro
   expect(editor.textContent).toBe('Manual changes');
   c.dispose();
 });
-it('refines current text, guards apply and undo, and rejects stale proposals', async () => {
+it('refines current text and preserves edit protection when reusing earlier versions', async () => {
   const { c, editor, sent } = await setup();
   editor.textContent = 'My edits';
   await c.command({ action: 'refine', instruction: 'Shorter' });
@@ -129,7 +129,8 @@ it('refines current text, guards apply and undo, and rejects stale proposals', a
   expect(editor.textContent).toBe('New edits');
   await c.command({ action: 'regenerate', promptId: 'p' });
   await vi.advanceTimersByTimeAsync(10);
-  await expect(c.command({ action: 'apply', turnId: turn.id })).rejects.toThrow();
+  expect(c.snapshot().turns.some((t) => t.id === turn.id)).toBe(true);
+  expect(await c.command({ action: 'apply', turnId: turn.id })).toMatchObject({ conflict: true });
   c.dispose();
   await expect(c.command({ action: 'refine', instruction: 'Hi' })).rejects.toThrow();
 });
@@ -250,5 +251,46 @@ it('uses the reply intent for native replies and sends the selected model', asyn
   await c.command({ action: 'refine', instruction: 'Shorter' });
   await vi.advanceTimersByTimeAsync(10);
   expect(sent.find((m) => m.type === 'job:refine').modelId).toBe('b');
+  c.dispose();
+});
+
+it('keeps previous versions and applies a changed intent together with extra instructions', async () => {
+  const { c, sent } = await setup({
+    prompts: [
+      { id: 'p', name: 'Prompt' },
+      { id: 'voice', name: 'In my voice' },
+    ],
+  });
+  const first = c.snapshot().turns.at(-1)!;
+  await c.command({ action: 'refine', instruction: 'Shorter', promptId: 'voice' });
+  await vi.advanceTimersByTimeAsync(10);
+  expect(sent.filter((m) => m.type === 'job:start').at(-1)).toMatchObject({
+    promptId: 'voice',
+    brief: 'Shorter',
+  });
+  expect(c.snapshot().turns.some((t) => t.id === first.id)).toBe(true);
+  expect(c.snapshot().turns.at(-1)).toMatchObject({ promptId: 'voice', promptName: 'In my voice' });
+  c.dispose();
+});
+
+it('allows returning to an unapplied version after regenerating', async () => {
+  const { c, editor } = await setup();
+  const first = c.snapshot().turns.at(-1)!;
+  await c.command({ action: 'regenerate', promptId: 'p' });
+  await vi.advanceTimersByTimeAsync(10);
+  await c.command({ action: 'apply', turnId: first.id });
+  expect(editor.textContent).toBe('Initial draft');
+  c.dispose();
+});
+
+it('refines the applied latest version rather than an older retained proposal', async () => {
+  const { c, editor, sent } = await setup();
+  await c.command({ action: 'refine', instruction: 'Shorter' });
+  await vi.advanceTimersByTimeAsync(10);
+  await c.command({ action: 'apply', turnId: c.snapshot().turns.at(-1)!.id });
+  editor.textContent = '';
+  await c.command({ action: 'refine', instruction: 'Try another opening' });
+  await vi.advanceTimersByTimeAsync(10);
+  expect(sent.filter((m) => m.type === 'job:refine').at(-1).refinement.currentDraft).toBe('');
   c.dispose();
 });

@@ -582,3 +582,285 @@ it('returns screenshot images to the model as visual tool content', async () => 
     globalThis.fetch = old;
   }
 });
+it('discusses page snapshots across durable follow-ups without writing policies or language defaults', async () => {
+  const settings = defaultSettings();
+  settings.model = 'test-model';
+  const dbName = 'page-chat-' + crypto.randomUUID();
+  const requests: any[] = [];
+  const old = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return new Response(
+      `data: ${JSON.stringify({ id: 'chat', model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', content: requests.length === 1 ? 'Consider symmetry.' : 'Pair equal terms.' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    );
+  };
+  const options = {
+    mode: 'chat' as const,
+    pageContext: {
+      id: 'snapshot-one',
+      tabId: 9,
+      capturedAt: 1,
+      url: 'https://math.example.org/amc',
+      title: 'AMC problem',
+      text: 'Problem: Find x. Published solution: 42.',
+      limitations: [],
+      truncated: false,
+    },
+    prompt: {
+      id: 'page-chat',
+      name: 'Page chat',
+      instructions: 'Honor hint-only requests.',
+      tools: [],
+    },
+    brief: 'Give a hint without the answer',
+    samples: [],
+    context: async () => [],
+    progress: () => {},
+  };
+  let session = await openDraft(
+    await IndexedDbStorage.open(dbName, { indexedDB }),
+    settings,
+    options,
+  );
+  try {
+    expect(await session.run('q1')).toBe('Consider symmetry.');
+    await session.close();
+    session = await openDraft(await IndexedDbStorage.open(dbName, { indexedDB }), settings, {
+      ...options,
+      pageContext: undefined,
+      brief: 'Explain that hint',
+    });
+    expect(await session.run('q2')).toBe('Pair equal terms.');
+    const policy = requests[0].messages
+      .filter((m: any) => m.role === 'system')
+      .map((m: any) => m.content)
+      .join('\n');
+    expect(policy).not.toContain('Return only the final editable draft');
+    expect(policy).not.toContain('Draft language default');
+    expect(policy).toMatch(/untrusted/i);
+    expect(policy).toMatch(/hint/i);
+    const firstUser = requests[0].messages.find((m: any) => m.role === 'user').content;
+    expect(firstUser).toContain('snapshot-one');
+    expect(firstUser).toContain('Published solution: 42');
+    expect(firstUser).not.toContain('Write an original tweet');
+    const history = JSON.stringify(requests[1].messages);
+    expect(history).toContain('Consider symmetry.');
+    expect(history).toContain('Explain that hint');
+    expect(history).toContain('No page is currently attached');
+  } finally {
+    await session.close();
+    globalThis.fetch = old;
+    await IndexedDbStorage.delete(dbName, { indexedDB });
+  }
+});
+it('draws and revises validated chat geometry through real durable tool rounds and sees manual undo', async () => {
+  const { commitDiagram, selectDiagram } = await import('../src/background/diagrams');
+  const settings = defaultSettings();
+  settings.model = 'test-model';
+  const name = 'diagram-tools-' + crypto.randomUUID();
+  let diagram: import('../src/geometry/document').DiagramDocument | undefined;
+  const triangle = {
+    dimension: 2,
+    points: [
+      { id: 'A', at: [0, 0] },
+      { id: 'B', at: [6, 0] },
+      { id: 'C', at: [0, 8] },
+    ],
+    segments: [
+      { a: 'A', b: 'B' },
+      { a: 'B', b: 'C' },
+      { a: 'C', b: 'A' },
+    ],
+    constraints: [{ kind: 'distance', a: 'A', b: 'B', value: 6 }],
+  };
+  const requests: any[] = [];
+  const old = globalThis.fetch;
+  let step = 0;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    step++;
+    const args =
+      step === 1
+        ? JSON.stringify({ calculations: [{ name: 'x', expression: 'sqrt(36)' }] })
+        : JSON.stringify({
+            sceneJson: JSON.stringify(
+              step === 3
+                ? { ...triangle, constraints: [{ kind: 'distance', a: 'A', b: 'B', value: 7 }] }
+                : triangle,
+            ),
+          });
+    const delta =
+      step <= 3
+        ? {
+            role: 'assistant',
+            tool_calls: [
+              {
+                index: 0,
+                id: 'drawing' + step,
+                type: 'function',
+                function: { name: step === 1 ? 'calculate' : 'draw_diagram', arguments: args },
+              },
+            ],
+          }
+        : {
+            role: 'assistant',
+            content: 'The diagram is ready; the inconsistent edit was rejected.',
+          };
+    return new Response(
+      `data: ${JSON.stringify({ id: 'c', model: 'test-model', choices: [{ index: 0, delta, finish_reason: step <= 3 ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    );
+  };
+  const options = {
+    mode: 'chat' as const,
+    prompt: { id: 'page-chat', name: 'Page chat', instructions: 'Help with the page.', tools: [] },
+    brief: 'Draw the given triangle without a hint',
+    samples: [],
+    context: async () => [],
+    progress: () => {},
+    diagram: {
+      get: async () => diagram,
+      draw: async (spec: unknown, id: string) => {
+        diagram = commitDiagram(diagram, spec, id);
+        return diagram;
+      },
+    },
+  };
+  let session = await openDraft(
+    await IndexedDbStorage.open(name, { indexedDB }),
+    settings,
+    options,
+  );
+  try {
+    await session.run('draw');
+    expect(requests[0].tools.map((t: any) => t.function.name)).toEqual(
+      expect.arrayContaining(['calculate', 'get_diagram', 'draw_diagram']),
+    );
+    expect(diagram?.versions).toHaveLength(1);
+    expect(JSON.stringify(requests[3].messages)).toContain('Unsatisfied distance constraint');
+    await session.close();
+    diagram = selectDiagram(diagram!, -1);
+    session = await openDraft(await IndexedDbStorage.open(name, { indexedDB }), settings, {
+      ...options,
+      brief: 'What is currently drawn?',
+    });
+    await session.run('after-undo');
+    const latestUser = requests
+      .at(-1)
+      .messages.filter((m: any) => m.role === 'user')
+      .at(-1).content;
+    expect(latestUser).toContain('Authoritative current diagram: null');
+  } finally {
+    await session.close();
+    globalThis.fetch = old;
+    await IndexedDbStorage.delete(name, { indexedDB });
+  }
+});
+it('iterates a document artifact with stable identity and exposes current artifact context on follow-up', async () => {
+  const { createArtifact, reviseArtifact } = await import('../src/background/artifacts');
+  const settings = defaultSettings();
+  settings.model = 'test-model';
+  const name = 'artifacts-' + crypto.randomUUID(),
+    requests: any[] = [];
+  let collection: import('../src/artifacts/types').ArtifactCollection = {
+    items: [],
+    operations: [],
+  };
+  const old = globalThis.fetch;
+  let stage = 0;
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    stage++;
+    let delta: any;
+    if (stage === 1)
+      delta = {
+        role: 'assistant',
+        tool_calls: [
+          {
+            index: 0,
+            id: 'artifact-create',
+            type: 'function',
+            function: {
+              name: 'create_artifact',
+              arguments: JSON.stringify({
+                kind: 'document',
+                title: 'Solution notes',
+                contentJson: JSON.stringify({ markdown: '# Given\nTriangle ABC' }),
+              }),
+            },
+          },
+        ],
+      };
+    else if (stage === 2)
+      delta = {
+        role: 'assistant',
+        tool_calls: [
+          {
+            index: 0,
+            id: 'artifact-update',
+            type: 'function',
+            function: {
+              name: 'update_artifact',
+              arguments: JSON.stringify({
+                artifactId: 'notes',
+                baseVersionId: collection.items[0].versions[0].id,
+                contentJson: JSON.stringify({ markdown: '# Given\nA right triangle ABC' }),
+              }),
+            },
+          },
+        ],
+      };
+    else delta = { role: 'assistant', content: 'The notes are ready.' };
+    return new Response(
+      `data: ${JSON.stringify({ id: 'c', model: 'test-model', choices: [{ index: 0, delta, finish_reason: stage < 3 ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    );
+  };
+  const options = {
+    mode: 'chat' as const,
+    prompt: { id: 'page-chat', name: 'Chat', instructions: 'Help.', tools: [] },
+    brief: 'Create solution notes',
+    samples: [],
+    context: async () => [],
+    progress: () => {},
+    artifacts: {
+      list: async () => collection,
+      create: async (input: import('../src/artifacts/types').ArtifactInput, id: string) =>
+        (collection = createArtifact(collection, input, id, 'notes')),
+      update: async (
+        id: string,
+        base: string | null,
+        data: unknown,
+        operation: string,
+        title?: string,
+      ) => (collection = reviseArtifact(collection, id, base, data, operation, title)),
+    },
+  };
+  let session = await openDraft(
+    await IndexedDbStorage.open(name, { indexedDB }),
+    settings,
+    options,
+  );
+  try {
+    await session.run('create');
+    expect(collection.items).toHaveLength(1);
+    expect(collection.items[0].versions).toHaveLength(2);
+    await session.close();
+    session = await openDraft(await IndexedDbStorage.open(name, { indexedDB }), settings, {
+      ...options,
+      brief: 'What is selected?',
+    });
+    await session.run('followup');
+    expect(
+      requests
+        .at(-1)
+        .messages.filter((m: any) => m.role === 'user')
+        .at(-1).content,
+    ).toContain('A right triangle ABC');
+  } finally {
+    await session.close();
+    globalThis.fetch = old;
+    await IndexedDbStorage.delete(name, { indexedDB });
+  }
+});

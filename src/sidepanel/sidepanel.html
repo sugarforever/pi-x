@@ -9,9 +9,17 @@
   </head>
   <body>
     <header class="toolbar">
-      <div class="brand">
-        <img src="icon128.png" width="24" height="24" alt="" /><span>pi-x</span>
-      </div>
+      <details id="mode-menu" class="mode-menu">
+        <summary id="mode-label">Page chat</summary>
+        <nav class="mode-tabs" aria-label="Mode">
+          <button id="chat-mode" class="mode" type="button">Chat with this page</button>
+          <button id="quote-mode" class="mode active" type="button">Quote</button>
+          <button id="reply-mode" class="mode" type="button">Reply</button>
+          <button id="compose-mode" class="mode" type="button">New post</button>
+        </nav>
+      </details>
+      <label class="sr-only" for="model-choice">Model</label>
+      <select id="model-choice" class="model-chip" aria-label="Model"></select>
       <button id="history-toggle" class="icon-button" aria-label="History" title="History">
         <svg viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="9" />
@@ -21,6 +29,38 @@
       <button id="new-tweet" class="icon-button" aria-label="New draft" title="New draft">
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
       </button>
+      <section id="page-context" class="page-context" hidden aria-label="Chat options">
+        <details id="page-details">
+          <summary class="icon-button" aria-label="Chat options" title="Chat options">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="5" cy="12" r="1" />
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="19" cy="12" r="1" />
+            </svg>
+          </summary>
+          <div class="page-menu-content">
+            <strong id="page-title"></strong>
+            <a id="page-url" target="_blank" rel="noopener noreferrer"></a>
+            <p id="page-metadata"></p>
+            <p id="page-limitations" role="status"></p>
+            <div id="page-selection"></div>
+            <pre id="page-text"></pre>
+            <p id="page-notice" role="status"></p>
+            <div class="page-actions">
+              <button id="refresh-page" type="button" class="quiet">Use current page</button>
+              <button id="remove-page" type="button" class="quiet">Remove context</button>
+              <button id="delete-chat" type="button" class="quiet">Delete chat</button>
+            </div>
+            <label class="visual-context"
+              ><input id="allow-screenshot" type="checkbox" /> Allow screenshot of attached page
+              (vision model required)</label
+            >
+            <p class="context-disclosure">
+              Attached content is sent to your selected model when you send a message.
+            </p>
+          </div>
+        </details>
+      </section>
       <button id="settings" class="icon-button" aria-label="Open settings" title="Settings">
         <svg viewBox="0 0 24 24">
           <path d="M4 7h10m4 0h2M4 17h4m4 0h8" />
@@ -29,43 +69,44 @@
         </svg>
       </button>
     </header>
-    <nav class="mode-tabs" aria-label="Mode">
-      <button id="quote-mode" class="mode active" aria-current="page" type="button">Quote</button>
-      <button id="reply-mode" class="mode" type="button">Reply</button>
-      <button id="compose-mode" class="mode" type="button">New post</button>
-    </nav>
     <main id="empty" class="empty">
+      <h1>Talk about the page you’re on</h1>
+      <p>Ask a question, discuss an idea, or work through a problem.</p>
+      <button id="start-chat" class="primary" type="button">Chat with this page</button>
       <button id="start-tweet" class="primary" type="button">Start a draft</button>
       <p id="new-status" role="status"></p>
     </main>
     <div id="workspace" hidden>
       <div class="context-row" id="context-row">
-        <details id="source-details" class="context">
-          <summary>
-            <span class="context-label">Source</span
-            ><span class="source-preview" id="source-preview"
-              ><strong id="source-author"></strong> <span id="source-snippet"></span></span
-            ><span class="source-show">Show</span>
-          </summary>
-          <a id="source" target="_blank" rel="noopener noreferrer"></a>
-          <p id="source-text"></p>
-        </details>
         <details id="draft-details">
           <summary>Draft <span id="draft-count"></span></summary>
           <p id="current-draft"></p>
         </details>
         <button id="undo" class="quiet" hidden>Undo</button>
       </div>
+      <div id="artifact-chip" class="artifact-chip" hidden>
+        <button
+          id="preview-artifact"
+          type="button"
+          class="quiet"
+          title="Open floating artifact preview"
+        >
+          Artifacts ↗
+        </button>
+        <button id="dock-artifact" type="button" class="quiet" aria-pressed="false">
+          Dock preview
+        </button>
+      </div>
+      <section id="diagram-panel" hidden aria-label="Artifact workspace"></section>
       <section
         id="conversation"
         class="conversation"
         role="log"
-        aria-label="Conversation with writing agent"
+        aria-label="Conversation with assistant"
       ></section>
       <footer class="compose-area">
         <div class="progress-line" hidden>
           <span id="progress" role="status" aria-live="polite"></span>
-          <button id="stop" class="quiet" hidden>Stop</button>
         </div>
         <div id="conflict" class="conflict" hidden>
           <strong>Draft changed in X</strong>
@@ -76,36 +117,47 @@
         </div>
         <p id="error" role="alert" hidden></p>
         <form id="chat-form">
-          <label class="sr-only" for="request">Message the agent</label>
-          <textarea
-            id="request"
-            placeholder="Ask for a change…"
-            rows="1"
-            maxlength="4000"
-          ></textarea>
-          <div class="composer-controls">
-            <label class="sr-only" for="prompt">Draft prompt</label>
-            <select id="prompt" aria-label="Draft prompt"></select>
-            <label class="sr-only" for="model-choice">Model</label>
-            <select id="model-choice" class="model-chip" aria-label="Model"></select>
-            <button
-              id="regenerate"
-              type="button"
-              class="icon-button"
-              aria-label="Regenerate"
-              title="Regenerate"
-            >
-              <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>
-            </button>
-            <button
-              id="send"
-              type="submit"
-              class="send"
-              aria-label="Send message"
-              title="Send · Enter (Shift + Enter for a new line)"
-            >
-              <svg viewBox="0 0 24 24"><path d="m6 12 6-6 6 6M12 6v13" /></svg>
-            </button>
+          <details id="source-details" class="context">
+            <summary>
+              <span class="context-label">Source</span
+              ><span class="source-preview" id="source-preview"
+                ><strong id="source-author"></strong> <span id="source-snippet"></span></span
+              ><span class="source-show">Show</span>
+            </summary>
+            <a id="source" target="_blank" rel="noopener noreferrer"></a>
+            <p id="source-text"></p>
+          </details>
+          <p id="intent-status" role="status" aria-live="polite" hidden></p>
+          <div class="message-row">
+            <label class="sr-only" for="request">Message the agent</label>
+            <textarea
+              id="request"
+              placeholder="Ask for a change…"
+              rows="1"
+              maxlength="4000"
+            ></textarea>
+            <div class="composer-controls">
+              <label class="sr-only" for="prompt">Draft prompt</label>
+              <select id="prompt" aria-label="Draft prompt"></select>
+              <button
+                id="send"
+                type="submit"
+                class="send"
+                aria-label="Generate draft"
+                title="Send · Enter (Shift + Enter for a new line)"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 19V5m-6 6 6-6 6 6" />
+                </svg>
+              </button>
+            </div>
           </div>
         </form>
       </footer>
@@ -129,6 +181,15 @@
           ><button type="submit" class="primary">Open post</button>
         </div>
       </form>
+    </dialog>
+    <dialog id="diagram-expanded" aria-label="Expanded diagram">
+      <div class="expanded-heading">
+        <button id="pin-preview" type="button" class="quiet" hidden>Keep on top</button
+        ><strong>Artifact workspace</strong
+        ><button id="open-diagram-tab" type="button" class="quiet">Open in tab</button
+        ><button id="close-diagram" type="button" class="quiet">Close diagram</button>
+      </div>
+      <section id="expanded-diagram-view"></section>
     </dialog>
     <script src="sidepanel.js"></script>
   </body>

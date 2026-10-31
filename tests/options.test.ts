@@ -11,10 +11,14 @@ afterEach(() => {
   vi.clearAllMocks();
   document.body.replaceChildren();
 });
-async function setup() {
+async function setup(settings = defaultSettings(), accountState = 'signed-out') {
   document.documentElement.innerHTML = readFileSync('src/options/options.html', 'utf8');
   rpc.mockImplementation(async (message) =>
-    message.type === 'settings:get' ? defaultSettings() : {},
+    message.type === 'settings:get'
+      ? settings
+      : message.type === 'chatgpt:status'
+        ? { state: accountState }
+        : {},
   );
   await import('../src/options/index');
   await vi.waitFor(() =>
@@ -172,7 +176,7 @@ it('shows the device code, completes polling, and signs out without storing toke
   const provider = document.getElementById('provider') as HTMLSelectElement;
   provider.value = 'chatgpt';
   provider.dispatchEvent(new Event('change', { bubbles: true }));
-  (document.getElementById('chatgpt-signin') as HTMLButtonElement).click();
+  (document.getElementById('chatgpt-device-signin') as HTMLButtonElement).click();
   await vi.waitFor(() =>
     expect(document.getElementById('chatgpt-code')!.textContent).toBe('ABCD-EFGH'),
   );
@@ -185,4 +189,64 @@ it('shows the device code, completes polling, and signs out without storing toke
     expect(document.getElementById('chatgpt-status')!.textContent).toContain('Signed out'),
   );
   vi.useRealTimers();
+});
+
+it('uses browser OAuth for the primary sign-in button without displaying a device code', async () => {
+  await setup();
+  rpc.mockImplementation(async (message) =>
+    message.type === 'chatgpt:browser'
+      ? { state: 'pending', method: 'browser', nextPollAt: Date.now() + 1000 }
+      : {},
+  );
+  (document.getElementById('chatgpt-signin') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect(document.getElementById('chatgpt-status')!.textContent).toContain('browser tab'),
+  );
+  expect(document.getElementById('chatgpt-device')!.hidden).toBe(true);
+});
+
+it('requires sign-out before removing a signed-in ChatGPT model, then permits removal', async () => {
+  const settings = defaultSettings();
+  settings.models = [
+    { id: 'api', baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'api-model' },
+    {
+      id: 'subscription',
+      provider: 'chatgpt',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: 'subscription-model',
+    },
+  ];
+  settings.defaultModelId = 'api';
+  await setup(settings, 'signed-in');
+  const remove = () =>
+    document.querySelector('[data-model-id="subscription"] button.delete') as HTMLButtonElement;
+  remove().click();
+  await vi.waitFor(() =>
+    expect(document.getElementById('connection-status')!.textContent).toMatch(
+      /sign out.*before removing/i,
+    ),
+  );
+  expect(document.querySelectorAll('.model-row')).toHaveLength(2);
+  expect(document.getElementById('chatgpt-account')!.hidden).toBe(false);
+  expect(document.activeElement?.id).toBe('chatgpt-signout');
+  expect(rpc.mock.calls.filter(([m]) => m.type === 'settings:save')).toHaveLength(0);
+  let signedIn = true;
+  rpc.mockImplementation(async (message) => {
+    if (message.type === 'chatgpt:signout') signedIn = false;
+    if (message.type.startsWith('chatgpt:'))
+      return { state: signedIn ? 'signed-in' : 'signed-out' };
+    return {};
+  });
+  (document.getElementById('chatgpt-signout') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect(document.getElementById('chatgpt-status')!.textContent).toContain('Signed out'),
+  );
+  remove().click();
+  await vi.waitFor(() => expect(document.querySelectorAll('.model-row')).toHaveLength(1));
+  await vi.waitFor(() =>
+    expect(document.getElementById('save-status')!.textContent).toBe('All changes saved.'),
+  );
+  const saved = rpc.mock.calls.filter(([m]) => m.type === 'settings:save').at(-1)![0].settings;
+  expect(saved.models.map((m: { id: string }) => m.id)).toEqual(['api']);
 });
