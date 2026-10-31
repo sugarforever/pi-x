@@ -78,7 +78,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Verify the exact tagged source
-        run: npm run check
+        run: env -u RELEASE_TAG npm run check
       - name: Build release ZIP and checksum
         run: npm run package:extension
       - name: Upload verified assets, then publish the draft release
