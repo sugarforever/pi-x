@@ -1,4 +1,5 @@
 import { renderMarkdown } from './markdown';
+import { inlineDrawing } from './inline-drawing';
 import { PinnedArtifactPreview } from './pinned-artifact';
 import { ArtifactWorkspace } from './artifact-workspace';
 import { fromDiagram } from '../artifacts/diagram-adapter';
@@ -228,21 +229,35 @@ function renderTurn(turn: PanelTurn, state: PanelState, historical = false) {
   else text.textContent = turn.text;
   article.append(text);
   if (state.mode === 'chat') {
-    if (turn.role === 'agent' && turn.jobId && state.artifacts) {
+    const artifacts = state.artifacts ?? fromDiagram(state.diagram);
+    if (turn.role === 'agent' && turn.jobId) {
       const cards = document.createElement('div');
       cards.className = 'artifact-cards';
       const seen = new Set<string>();
-      for (const receipt of state.artifacts.operations
-        .filter((r) => r.jobId === turn.jobId)
-        .reverse()) {
+      for (const receipt of artifacts.operations.filter((r) => r.jobId === turn.jobId).reverse()) {
         if (seen.has(receipt.artifactId)) continue;
-        const artifact = state.artifacts.items.find((a) => a.id === receipt.artifactId);
+        const artifact = artifacts.items.find((a) => a.id === receipt.artifactId);
         if (!artifact) continue;
         seen.add(artifact.id);
+        if (artifact.kind === 'diagram') {
+          const version = artifact.versions.find((v) => v.id === receipt.versionId);
+          cards.append(
+            inlineDrawing(artifact, version, state.busy, async () => {
+              await rpc({
+                type: 'preview:open',
+                chatId: state.composerId,
+                mode: 'window',
+                artifactId: artifact.id,
+                versionId: receipt.versionId,
+              });
+            }),
+          );
+          continue;
+        }
         const card = document.createElement('button');
         card.type = 'button';
         card.className = 'artifact-card';
-        card.textContent = `${artifact.kind === 'diagram' ? 'Drawing' : artifact.kind === 'code' ? 'Code' : 'Document'} · ${artifact.title}`;
+        card.textContent = `${artifact.kind === 'code' ? 'Code' : 'Document'} · ${artifact.title}`;
         card.setAttribute('aria-label', `Open artifact ${artifact.title}`);
         card.disabled = state.busy || !artifact.versions.some((v) => v.id === receipt.versionId);
         card.onclick = async () => {
@@ -529,7 +544,7 @@ function render() {
     state.turns,
     state.busy,
     state.toolCalls,
-    state.artifacts?.items.map((a) => [a.id, a.title, a.cursor, a.versions.map((v) => v.id)]),
+    state.artifacts ?? state.diagram,
   ]);
   if (signature !== nextSignature) {
     const log = el('conversation');
@@ -768,7 +783,7 @@ function showHistorical(id: string) {
     content.append(source);
   }
   const state: PanelState = {
-    composerId: 'history',
+    composerId: session.id,
     mode: session.mode as PanelState['mode'],
     currentDraft: '',
     prompts: [],
@@ -779,12 +794,40 @@ function showHistorical(id: string) {
     turns: session.turns,
     canUndo: false,
   };
-  for (const item of conversationItems(session.turns, session.toolCalls))
-    content.append(
-      item.kind === 'turn'
-        ? renderTurn(item.turn, state, true)
-        : renderToolHistory(item.traces, expandedTools, `history:${item.jobId}`),
+  const turns = document.createElement('div');
+  content.append(turns);
+  const renderHistory = () =>
+    turns.replaceChildren(
+      ...conversationItems(session.turns, session.toolCalls).map((item) =>
+        item.kind === 'turn'
+          ? renderTurn(item.turn, state, true)
+          : renderToolHistory(item.traces, expandedTools, `history:${item.jobId}`),
+      ),
     );
+  renderHistory();
+  if (session.mode === 'chat') {
+    const status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    status.textContent = 'Loading drawings…';
+    turns.before(status);
+    void rpc<NonNullable<PanelState['artifacts']>>({
+      type: 'panel:artifact-history',
+      chatId: session.id,
+    })
+      .then((artifacts) => {
+        if (!turns.isConnected) return;
+        state.artifacts = {
+          ...artifacts,
+          items: artifacts.items.filter((a) => a.kind === 'diagram'),
+        };
+        renderHistory();
+        status.remove();
+      })
+      .catch(() => {
+        if (turns.isConnected)
+          status.textContent = 'Could not load saved drawings. Continue this chat to try again.';
+      });
+  }
 }
 el('new-tweet').setAttribute('aria-label', 'New chat');
 el('new-tweet').title = 'New chat';

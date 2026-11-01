@@ -288,6 +288,19 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
         throw new Error('Conversation is unavailable.');
       if (message.mode !== 'tab' && message.mode !== 'window')
         throw new Error('Invalid preview mode.');
+      if (message.artifactId !== undefined || message.versionId !== undefined) {
+        if (
+          typeof message.artifactId !== 'string' ||
+          !message.artifactId ||
+          typeof message.versionId !== 'string' ||
+          !message.versionId
+        )
+          throw new Error('Invalid artifact version.');
+        const jobs = await allJobs();
+        if (jobs.some((j) => j.sessionId === message.chatId && j.status === 'running'))
+          throw new Error('Wait for the current answer or stop it first.');
+        await artifacts.select(message.chatId, message.artifactId, message.versionId);
+      }
       const url =
         chrome.runtime.getURL('sidepanel.html') +
         '#artifact=' +
@@ -327,6 +340,11 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
       }
       if (tabId !== undefined) await chrome.storage.session.set({ [key]: tabId });
     });
+  if (panel && message.type === 'panel:artifact-history') {
+    if (typeof message.chatId !== 'string' || !(await pageChats.get(message.chatId)))
+      throw new Error('Conversation is unavailable.');
+    return artifacts.get(message.chatId);
+  }
   if (panel && message.type === 'panel:history')
     return historySessions(await allJobs(), Date.now(), await pageChats.list());
   if (panel && message.type === 'panel:chat')

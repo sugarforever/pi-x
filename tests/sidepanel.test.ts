@@ -10,7 +10,7 @@ afterEach(() => {
   document.body.replaceChildren();
   history.replaceState(null, '', location.pathname);
 });
-async function setup(overrides: Partial<PanelState> = {}) {
+async function setup(overrides: Partial<PanelState> = {}, historicalChat = false) {
   vi.useFakeTimers();
   document.documentElement.innerHTML = readFileSync('src/sidepanel/sidepanel.html', 'utf8');
   const dialog = document.getElementById('diagram-expanded') as HTMLDialogElement;
@@ -80,16 +80,26 @@ async function setup(overrides: Partial<PanelState> = {}) {
               defaultModelId: 'a',
             },
           };
+        if (m.type === 'panel:artifact-history')
+          return { ok: true, value: structuredClone(state.artifacts) };
         if (m.type === 'panel:history')
           return {
             ok: true,
             value: [
               {
                 id: 's',
-                mode: 'quote',
+                mode: historicalChat ? 'chat' : 'quote',
                 title: 'Saved conversation',
                 updatedAt: Date.now(),
-                turns: [{ id: 'saved', role: 'agent', text: 'Saved draft', status: 'proposal' }],
+                turns: [
+                  {
+                    id: 'saved',
+                    jobId: 'j',
+                    role: 'agent',
+                    text: 'Saved draft',
+                    status: 'proposal',
+                  },
+                ],
                 toolCalls: [],
               },
             ],
@@ -512,3 +522,128 @@ it.each(['window', 'tab'])(
     else expect(updates()).toEqual([]);
   },
 );
+
+it('shows each rounds final drawings inline without opening a window or editing controls', async () => {
+  const { createArtifact, reviseArtifact } = await import('../src/background/artifacts');
+  const { emptyArtifacts } = await import('../src/artifacts/types');
+  const scene = (title: string) => ({
+    dimension: 2,
+    title,
+    points: [
+      { id: 'A', label: 'A', at: [0, 0] },
+      { id: 'B', at: [6, 0] },
+    ],
+    segments: [{ a: 'A', b: 'B' }],
+  });
+  let artifacts = createArtifact(
+    emptyArtifacts(),
+    { kind: 'diagram', title: 'Original', data: scene('Original') },
+    'v1',
+    'drawing',
+    'old',
+  );
+  artifacts = reviseArtifact(
+    artifacts,
+    'drawing',
+    'v1',
+    scene('Intermediate'),
+    'v2',
+    'Intermediate',
+    'j',
+  );
+  artifacts = reviseArtifact(artifacts, 'drawing', 'v2', scene('Final'), 'v3', 'Final', 'j');
+  artifacts = createArtifact(
+    artifacts,
+    { kind: 'diagram', title: 'Second', data: scene('Second') },
+    'other',
+    'second',
+    'j',
+  );
+  const { messages, state } = await setup({
+    mode: 'chat',
+    artifacts,
+    turns: [
+      { id: 'old', jobId: 'old', role: 'agent', text: 'First drawing' },
+      { id: 'j', jobId: 'j', role: 'agent', text: 'Revised drawings' },
+    ],
+  });
+  expect(document.querySelectorAll('.inline-drawing svg')).toHaveLength(3);
+  expect(document.querySelector('.turn[data-job-id="old"] svg')?.getAttribute('aria-label')).toBe(
+    'Original',
+  );
+  expect(document.querySelectorAll('.turn[data-job-id="j"] svg')).toHaveLength(2);
+  expect(document.querySelector('svg[aria-label="Intermediate"]')).toBeNull();
+  expect(
+    document.querySelector(
+      '.inline-drawing [tabindex], .inline-drawing [role="button"], .inline-drawing select',
+    ),
+  ).toBeNull();
+  expect(messages.some((m) => m.type === 'preview:open')).toBe(false);
+  (
+    document.querySelector('.turn[data-job-id="old"] .inline-drawing button') as HTMLButtonElement
+  ).click();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(messages).toContainEqual(
+    expect.objectContaining({
+      type: 'preview:open',
+      chatId: 'c',
+      mode: 'window',
+      artifactId: 'drawing',
+      versionId: 'v1',
+    }),
+  );
+  state.busy = true;
+  await vi.advanceTimersByTimeAsync(600);
+  expect(document.querySelectorAll('.inline-drawing svg')).toHaveLength(3);
+  expect((document.querySelector('.inline-drawing button') as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  state.busy = false;
+  state.turns[1].status = 'error';
+  await vi.advanceTimersByTimeAsync(600);
+  expect(document.querySelectorAll('.turn.error .inline-drawing svg')).toHaveLength(2);
+  state.artifacts!.items[0].versions = state.artifacts!.items[0].versions.slice(1);
+  await vi.advanceTimersByTimeAsync(600);
+  const old = document.querySelector('.turn[data-job-id="old"]')!;
+  expect(old.querySelector('svg')).toBeNull();
+  expect(old.textContent).toContain('Drawing version is no longer available');
+});
+
+it('loads drawings for a historical chat and opens that chat rather than the active one', async () => {
+  const { createArtifact } = await import('../src/background/artifacts');
+  const artifacts = createArtifact(
+    { items: [], operations: [] },
+    {
+      kind: 'diagram',
+      title: 'Saved drawing',
+      data: { dimension: 2, points: [{ id: 'A', at: [0, 0] }] },
+    },
+    'v1',
+    'd',
+    'j',
+  );
+  const withDocument = createArtifact(
+    artifacts,
+    { kind: 'document', title: 'Saved notes', data: { markdown: 'Notes' } },
+    'doc-v1',
+    'notes',
+    'j',
+  );
+  const { messages } = await setup({ mode: 'chat', artifacts: withDocument }, true);
+  document.getElementById('history-toggle')!.click();
+  await vi.advanceTimersByTimeAsync(1);
+  (document.querySelector('.history-item') as HTMLButtonElement).click();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(document.querySelectorAll('#history-content .inline-drawing svg')).toHaveLength(1);
+  expect(document.querySelector('#history-content .artifact-card')).toBeNull();
+  (document.querySelector('#history-content .inline-drawing button') as HTMLButtonElement).click();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(messages).toContainEqual(
+    expect.objectContaining({
+      type: 'preview:open',
+      chatId: 's',
+      artifactId: 'd',
+      versionId: 'v1',
+    }),
+  );
+});

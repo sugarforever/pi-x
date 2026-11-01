@@ -1574,3 +1574,35 @@ select.model-chip {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Message snapshots remain readable in a narrow side panel. */
+.inline-drawing {
+  flex: 1 0 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.inline-drawing figcaption {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin-bottom: 6px;
+}
+.inline-drawing > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(360px, 45vh);
+  background: #fbfcfa;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.inline-drawing > button {
+  margin-top: 6px;
+}
+.inline-drawing > p:empty {
+  display: none;
+}
