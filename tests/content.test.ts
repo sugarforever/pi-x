@@ -208,3 +208,34 @@ it('canonicalizes a quoted image link before sending the source to the backgroun
     'https://x.com/badlogicgames/status/2116078693827428383',
   );
 });
+
+it('recognizes a permalink quote card when attachments contains only its images', async () => {
+  const { findQuoteEditor } = await import('../src/content/dom');
+  const post = {
+    id: '2120574811038691488',
+    url: 'https://x.com/lennysan/status/2120574811038691488',
+    author: 'Lenny @lennysan',
+    text: 'The tech job market is in its best shape in years.\n\nThere are 281,000+ open roles. More analysis.',
+    links: [],
+  };
+  document.body.innerHTML = `<div role="dialog"><div data-testid="tweetTextarea_0" contenteditable="true"></div><div role="link"><div data-testid="User-Name">Lenny @lennysan</div><div data-testid="tweetText">The tech job market is in its best shape in years.\n\nThere are 281,000+ open roles…</div><div data-testid="attachments"><img alt="Chart"></div></div></div>`;
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(hasQuotedPost(dialog, post)).toBe(true);
+  expect(findQuoteEditor(document, post, false)?.dialog).toBe(dialog);
+  dialog.querySelector('[data-testid="tweetText"]')!.textContent =
+    'Another post from the same author';
+  expect(findQuoteEditor(document, post, false)).toBeUndefined();
+});
+
+it('does not bind a full-page editor to a source article elsewhere in main', async () => {
+  const { findQuoteEditor } = await import('../src/content/dom');
+  const post = {
+    id: '123',
+    url: 'https://x.com/author/status/123',
+    author: 'Author',
+    text: 'Source post',
+    links: [],
+  };
+  document.body.innerHTML = `<main>${article('123', 'Source post')}<div data-testid="tweetTextarea_0" contenteditable="true"></div></main>`;
+  expect(findQuoteEditor(document, post, true)).toBeUndefined();
+});
