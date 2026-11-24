@@ -1,3 +1,4 @@
+import { EDITOR_SELECTOR } from './dom';
 const launchers = new WeakMap<HTMLElement, HTMLElement>();
 function composerRoot(editor: HTMLElement): HTMLElement | undefined {
   if (editor.closest('article,[data-testid="tweet"]')) return;
@@ -10,6 +11,11 @@ function composerRoot(editor: HTMLElement): HTMLElement | undefined {
     )
       return;
     return dialog;
+  }
+  if (editor instanceof HTMLTextAreaElement) {
+    const form = editor.closest('form');
+    if (form?.querySelector('article,[data-testid="replyingTo"]')) return;
+    return form || undefined;
   }
   // Find the inline composer itself, never the main column containing the feed.
   for (
@@ -26,9 +32,7 @@ export function installDraftLaunchers(
   document: Document,
   start: (root: HTMLElement, editor: HTMLElement) => void,
 ) {
-  for (const editor of document.querySelectorAll<HTMLElement>(
-    '[data-testid="tweetTextarea_0"][contenteditable="true"],[data-testid="tweetTextarea_0"] [contenteditable="true"]',
-  )) {
+  for (const editor of document.querySelectorAll<HTMLElement>(EDITOR_SELECTOR)) {
     if (editor.dataset.piXBound || launchers.get(editor)?.isConnected) continue;
     const root = composerRoot(editor);
     if (!root) continue;

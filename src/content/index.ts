@@ -1,4 +1,14 @@
-import { extractPost, findQuoteItem, conversationPosts, hasQuotedPost, expandPost } from './dom';
+import {
+  POST_SELECTOR,
+  REPOST_SELECTOR,
+  REPLY_SELECTOR,
+  EDITOR_SELECTOR,
+  extractPost,
+  findQuoteItem,
+  conversationPosts,
+  expandPost,
+  findQuoteEditor,
+} from './dom';
 import { installDraftLaunchers, removeDraftLauncher } from './launchers';
 import { Composer } from './composer';
 import type { Post } from '../shared/types';
@@ -12,9 +22,9 @@ let restoredDraft: string | undefined;
 let activeComposerId: string | undefined;
 function capture(event: Event) {
   const target = event.target instanceof Element ? event.target : null;
-  const button = target?.closest('[data-testid="retweet"],[data-testid="unretweet"]');
+  const button = target?.closest(REPOST_SELECTOR);
   if (!button) return;
-  const article = button.closest('article[data-testid="tweet"]');
+  const article = button.closest(POST_SELECTOR);
   selected = article ? extractPost(article) : undefined;
 }
 document.addEventListener('pointerdown', capture, true);
@@ -22,13 +32,13 @@ document.addEventListener('click', capture, true);
 function update() {
   if (modeIntent) {
     const intent = modeIntent;
-    const article = [...document.querySelectorAll('article[data-testid="tweet"]')].find(
+    const article = [...document.querySelectorAll(POST_SELECTOR)].find(
       (a) => extractPost(a)?.url === intent.url,
     );
     const post = article ? extractPost(article) : undefined;
     if (post && article) {
       if (intent.mode === 'reply') {
-        const native = article.querySelector<HTMLElement>('[data-testid="reply"]');
+        const native = article.querySelector<HTMLElement>(REPLY_SELECTOR);
         if (native) {
           pending = {
             mode: 'reply',
@@ -40,9 +50,7 @@ function update() {
           native.click();
         }
       } else if (!intent.menu) {
-        const native = article.querySelector<HTMLElement>(
-          '[data-testid="retweet"],[data-testid="unretweet"]',
-        );
+        const native = article.querySelector<HTMLElement>(REPOST_SELECTOR);
         if (native) {
           selected = post;
           intent.menu = true;
@@ -127,18 +135,16 @@ function update() {
   }
   if (composeIntent && ![...composers.values()].some((c) => c.connected)) {
     const editor =
-      document.querySelector<HTMLElement>(
-        '[role="dialog"] [data-testid="tweetTextarea_0"][contenteditable="true"], [role="dialog"] [data-testid="tweetTextarea_0"] [contenteditable="true"]',
-      ) ||
-      document.querySelector<HTMLElement>(
-        'main [data-testid="tweetTextarea_0"][contenteditable="true"]',
-      );
+      document
+        .querySelector<HTMLElement>('[role="dialog"]')
+        ?.querySelector<HTMLElement>(EDITOR_SELECTOR) ||
+      document.querySelector('main')?.querySelector<HTMLElement>(EDITOR_SELECTOR);
     const root =
       editor?.closest<HTMLElement>('[role="dialog"]') || editor?.closest<HTMLElement>('main');
     if (
       editor &&
       root &&
-      !root.querySelector('[data-testid="attachments"],[data-testid="replyingTo"]')
+      !root.querySelector('article,[data-testid="attachments"],[data-testid="replyingTo"]')
     ) {
       removeDraftLauncher(editor);
       const c = new Composer(
@@ -162,14 +168,28 @@ function update() {
     pending = undefined;
     return;
   }
+  if (pending.mode !== 'reply') {
+    const target = findQuoteEditor(
+      document,
+      pending.post,
+      /^\/compose\/(post|tweet)\/?$/.test(location.pathname),
+      pending.existing,
+    );
+    if (!target) return;
+    removeDraftLauncher(target.editor);
+    const c = new Composer(target.dialog, target.editor, pending.post, () => {
+      activeComposerId = c.id;
+    });
+    composers.set(c.id, c);
+    activeComposerId = c.id;
+    pending = undefined;
+    return;
+  }
   for (const dialog of document.querySelectorAll<HTMLElement>('[role="dialog"]')) {
     if (pending.existing.has(dialog)) continue;
-    const editor = dialog.querySelector<HTMLElement>(
-      '[data-testid="tweetTextarea_0"][contenteditable="true"], [data-testid="tweetTextarea_0"] [contenteditable="true"]',
-    );
+    const editor = dialog.querySelector<HTMLElement>(EDITOR_SELECTOR);
     if (!editor) continue;
     const composerDialog = editor.closest<HTMLElement>('[role="dialog"]') || dialog;
-    if (pending.mode !== 'reply' && !hasQuotedPost(composerDialog, pending.post)) continue;
     removeDraftLauncher(editor);
     const c = new Composer(
       composerDialog,
