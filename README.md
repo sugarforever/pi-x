@@ -4,7 +4,7 @@
 
 Ask questions about a web page, draw and revise diagrams, create notes and code, or draft posts for X. pi-x opens beside the page in Chrome’s side panel.
 
-[Download releases](https://github.com/sugarforever/pi-x/releases) · [Detailed user guide](docs/USER_GUIDE.md)
+[Product page](https://www.verysmallwoods.com/pix) · [Download releases](https://github.com/sugarforever/pi-x/releases) · [Detailed user guide](docs/USER_GUIDE.md)
 
 ## Install in Chrome
 
